@@ -1,6 +1,8 @@
-# Agentic Loop HELP
+# Agentic Loop — HELP
 
-```
+Canonical reference for `/agentic-loop`. Also embedded in [README.md](../README.md) and [`.cursor/commands/agentic-loop.md`](../.cursor/commands/agentic-loop.md).
+
+```text
 Agentic Loop Engineering Kit — plan-mode-first Loop OS for Java/Spring Boot repos
 
 USAGE

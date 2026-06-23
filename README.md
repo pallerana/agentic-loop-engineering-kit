@@ -6,11 +6,11 @@ Plan-mode-first Loop Engineering OS for Java/Spring Boot monorepos.
 
 ## What it is
 
-- Slash command `/agentic-loop` — always starts in Plan mode (L1 default)
-- YAML profiles in `loop-kit/profiles/`
-- Seven Cursor rules under `.cursor/rules/`
-- Human gates before implement, verify, or ship
-- Failure Router recommends next phase only
+- **Slash command** `/agentic-loop` — plan-mode-first; phases 0–9; **L1 default** (Phase 0→2, report-only)
+- **Profiles** — YAML in `loop-kit/profiles/` (`springboot-default`, `ops-incident`; extend for your services)
+- **Maker/checker** — implementer (`ce-work`) never verifies itself (`loop-verifier`); orchestrator delegates
+- **Failure Router** — classifies failures and **recommends** next phase; never auto-re-dispatch
+- **Seven standards** — Java, Spring Boot, quality drill, PR review, Terraform, jabrena testing rules
 
 ## Quick start
 
@@ -25,6 +25,17 @@ cp agentic-loop-engineering-kit/patterns/registry.yaml ./patterns/
 npx @cobusgreyling/loop-audit . --suggest
 /agentic-loop --help
 ```
+
+## Installation
+
+1. **Copy or submodule** this repo into your monorepo tooling area.
+2. **Merge** `loop-kit/` and `.cursor/` (commands, agents, skills, rules, hooks).
+3. **Copy root loop files:** `LOOP.md`, `STATE.md`, `loop-budget.md`, `loop-run-log.md`, `patterns/registry.yaml`.
+4. **Enable hooks** — `.cursor/hooks.json` (dangerous-git, denylist-edits, append-run-log).
+5. **MCP** — merge `.cursor/mcp.agentic-loop.template.json` into your MCP config.
+6. **Consumer profile** — add `loop-kit/profiles/my-service.yaml` extending `springboot-default`.
+7. **Validate** — `npx @cobusgreyling/loop-audit . --suggest` (see below).
+8. **Recommended** — bootstrap [LLM-wiki](https://github.com/Ss1024sS/LLM-wiki) and [graphify](https://github.com/safishamsi/graphify) for efficient agent behaviour.
 
 ## Recommended companion setup (efficient agent behaviour)
 
@@ -95,9 +106,30 @@ Examples:
 
 ## Validate your setup
 
+After copying this kit into your monorepo, run from the **repository root**:
+
 ```bash
 npx @cobusgreyling/loop-audit . --suggest
 ```
+
+- **`--suggest`** prints missing files and recommended fixes (do this first).
+- Re-run after adding `loop-kit/profiles/<your-service>.yaml` and merging `.cursor/`.
+- Target **L1** before your first `/agentic-loop` pilot; tune `loop-budget.md` per suggestions.
+
+| Signal | Expected path (after merge) |
+|--------|----------------------------|
+| Loop config | `LOOP.md` (points to `loop-kit/`) |
+| Human inbox | `STATE.md` |
+| Budget caps | `loop-budget.md` |
+| Run history | `loop-run-log.md` |
+| Pattern registry | `patterns/registry.yaml` (`id: agentic-loop`) |
+| Triage / verifier | `.cursor/skills/loop-triage`, `loop-verifier` |
+
+| Score | Meaning | Next step |
+|-------|---------|-----------|
+| L0 | Missing loop files or skills | Follow `--suggest` output |
+| L1 | Report-only ready | `/agentic-loop --mode L1 --profile springboot-default --repo <path> PROJ-123` |
+| L2+ | Implement + verify wired | Human-approved L2/L3-push pilot |
 
 Reference: [loop-engineering](https://github.com/cobusgreyling/loop-engineering) · [loop-audit](https://www.npmjs.com/package/@cobusgreyling/loop-audit)
 
@@ -187,45 +219,247 @@ test "$(find .cursor/rules -name '*.mdc' | wc -l | tr -d ' ')" -eq 7
 
 ## Folder structure
 
-```
+```text
 agentic-loop-engineering-kit/
-├── README.md, LICENSE, LOOP.md, STATE.md, loop-budget.md, loop-run-log.md
-├── docs/HELP.md, docs/safety.md, docs/standards/README.md
-├── loop-kit/ (GATES, LOOP, profiles, state templates)
+├── README.md
+├── LICENSE
+├── LOOP.md
+├── STATE.md
+├── loop-budget.md
+├── loop-run-log.md
+├── docs/
+│   ├── HELP.md
+│   ├── safety.md
+│   └── standards/
+│       └── README.md
+├── loop-kit/
+│   ├── ARCHITECTURE.md
+│   ├── LOOP.md
+│   ├── GATES.md
+│   ├── STATE.md
+│   ├── loop-budget.md
+│   ├── loop-run-log.md
+│   ├── feature-state.md
+│   ├── ops-incident-state.md
+│   ├── patterns/feature-loop-example.md
+│   └── profiles/
+│       ├── README.md
+│       ├── springboot-default.yaml
+│       └── ops-incident.yaml
 ├── patterns/registry.yaml
-└── .cursor/ (commands, agents, skills, rules, hooks, MCP template)
+└── .cursor/
+    ├── commands/agentic-loop.md
+    ├── agents/
+    │   ├── agentic-loop-orchestrator.md
+    │   └── loop-verifier.md
+    ├── skills/
+    │   ├── agentic-loop/SKILL.md + scripts/ (6)
+    │   ├── loop-triage/SKILL.md
+    │   ├── loop-verifier/SKILL.md
+    │   ├── loop-budget/SKILL.md
+    │   └── ops-incident-loop/SKILL.md
+    ├── rules/
+    │   ├── java-springboot-standards.mdc
+    │   ├── service-quality-drill.mdc
+    │   ├── pr-code-review.mdc
+    │   ├── terraform-standards.mdc
+    │   └── external/jabrena-302|311|312*.mdc
+    ├── hooks.json + hooks/*.sh
+    └── mcp.agentic-loop.template.json
 ```
 
 ## Architecture
 
-### System layers
+### Diagram 1 — System layers
 
 ```mermaid
 flowchart TB
-  CMD["/agentic-loop"] --> ORCH["agentic-loop-orchestrator"]
-  ORCH --> RUNBOOK["agentic-loop-runbook"]
-  RUNBOOK --> PROFILES["loop-kit/profiles/"]
-  RUNBOOK --> GATES["GATES.md"]
-  ORCH --> STATE["STATE.md + run-log"]
+  subgraph entry [Entry]
+    CMD["/agentic-loop command"]
+    HELP["--help only"]
+  end
+  subgraph orchestration [Orchestration Plan mode only]
+    ORCH["agentic-loop-orchestrator agent"]
+    RUNBOOK["agentic-loop-runbook SKILL.md"]
+  end
+  subgraph config [Configuration]
+    PROFILES["YAML profiles loop-kit/profiles/"]
+    GATES["GATES.md"]
+    BUDGET["loop-budget.md"]
+  end
+  subgraph state [Durable state]
+    STATE["STATE.md"]
+    FEAT["feature-state.md"]
+    OPS["ops-incident-state.md"]
+    LOG["loop-run-log.md"]
+  end
+  subgraph delegates [Delegated skills]
+    TRIAGE["loop-triage"]
+    PLAN["ce-plan + ce-testing-reviewer"]
+    WORK["ce-work"]
+    VERIFY["loop-verifier"]
+    PREVIEW["pr-code-review.mdc"]
+    CEREV["ce-code-review"]
+    SHIP["commit-push-pr + babysit"]
+    HYGIENE["ce-resolve-pr-feedback"]
+    COMPOUND["ce-compound"]
+  end
+  subgraph tooling [Scripts and hooks]
+    SCRIPTS["gradle-build parse-jacoco gh-pr-checks-watch"]
+    HOOKS["block-dangerous-git block-denylist-edits"]
+  end
+  subgraph external [External MCP]
+    JIRA["Atlassian"]
+    GH["GitHub"]
+    DD["Datadog"]
+    PD["PagerDuty"]
+  end
+  CMD --> ORCH
+  HELP --> CMD
+  ORCH --> RUNBOOK
+  RUNBOOK --> PROFILES
+  RUNBOOK --> GATES
+  RUNBOOK --> BUDGET
+  ORCH --> STATE
+  ORCH --> delegates
+  delegates --> SCRIPTS
+  delegates --> external
+  SCRIPTS --> HOOKS
 ```
 
-### Phase machine
+### Diagram 2 — Invocation routing
+
+```mermaid
+flowchart LR
+  INV["Invocation"] --> PARSE["Parse flags and target"]
+  PARSE --> H{"--help or no target?"}
+  H -->|yes| HELP["Print HELP stop"]
+  H -->|no| PLAN["SwitchMode plan"]
+  PLAN --> LOAD["Load profile YAML"]
+  LOAD --> TARGET{"Target type?"}
+  TARGET -->|JIRA-KEY| FULL["Full loop Phases 0-9"]
+  TARGET -->|"--pr or PR URL"| P5["Jump Phase 5 pr-code-review"]
+  TARGET -->|"--phase N"| RESUME["Resume at phase N"]
+  TARGET -->|ops flags| OPS["ops-incident L1"]
+  TARGET -->|handoff| HANDOFF["Ops to feature preload STATE"]
+  FULL --> MODE{"--mode?"}
+  MODE -->|L1| L1["Phases 0-2 only"]
+  MODE -->|L2| L2["Through review"]
+  MODE -->|L3-push| L3["Push and CI babysit"]
+```
+
+### Diagram 3 — Phase machine
 
 ```mermaid
 flowchart TD
-  P0["Phase 0 Context"] --> P1["Phase 1 Plan"] --> P2["Phase 2 Review"]
-  P2 --> GATE{"Human gate?"}
-  GATE -->|L1| STOP["STOP"]
-  GATE -->|yes| P3["Phase 3 Implement"] --> P4["Verify"] --> P5["Review"] --> P6["Ship"]
+  START(["/agentic-loop --profile X TARGET"]) --> P0
+  P0["Phase 0 Context sync"]
+  P0b["Phase 0b Ticket ack"]
+  P1["Phase 1 Plan"]
+  P2["Phase 2 Plan review"]
+  P3["Phase 3 Implement"]
+  P4["Phase 4 Verify"]
+  P5["Phase 5 Code review"]
+  P6["Phase 6 Ship"]
+  P7["Phase 7 PR hygiene"]
+  P8["Phase 8 Close-the-loop"]
+  P9["Phase 9 Wiki and compound"]
+  P0 --> P0b --> P1 --> P2
+  P2 --> GATE1{{"Human gate approve plan?"}}
+  GATE1 -->|L1 or no| STOP1["STOP Plan mode"]
+  GATE1 -->|yes| P3
+  P3 --> GATE2{{"Human gate approve verify?"}}
+  GATE2 -->|no| STOP2["STOP"]
+  GATE2 -->|yes| P4
+  P4 --> P5 --> P6
+  P6 --> GATE3{{"Human gate L3-push?"}}
+  GATE3 -->|no| STOP3["STOP at PR draft"]
+  GATE3 -->|yes| P6RUN["push and CI babysit max 3"]
+  P6RUN --> P7 --> P8 --> P9 --> DONE(["Done human merges PR"])
+  P4 -.->|fail| FR["Failure Router recommend only"]
+  P5 -.->|P0 P1| FR
+  P6RUN -.->|CI red| FR
 ```
 
-### PR review routing
+### Diagram 4 — Phase 5 PR branch
 
 ```mermaid
 flowchart TD
-  P5["Phase 5"] --> PR{"--pr?"}
-  PR -->|yes| TYPE["pr_type java/infra/mixed"]
-  TYPE --> REV["pr-code-review.mdc"]
+  P5IN["Phase 5 entry"] --> PRCHK{"--pr or PR URL?"}
+  PRCHK -->|no| CEREV["ce-code-review vs main"]
+  PRCHK -->|yes| P0A["0a-0d PR metadata Jira threads"]
+  P0A --> P0E["0e pr_type java infra mixed"]
+  P0E --> P0F["0f feedback registry dedup"]
+  P0F --> PASS1["Pass 1 ce-code-review"]
+  PASS1 --> PASS2["Pass 2 Bugbot"]
+  PASS2 --> ROUTE{"pr_type"}
+  ROUTE -->|java-only| J3["Pass 3 java-springboot ArchUnit drill"]
+  ROUTE -->|infra-only| I3["Pass 3 terraform observability"]
+  ROUTE -->|mixed| M3["Pass 3 segmented Java and Infra"]
+  J3 --> SYNTH
+  I3 --> SYNTH
+  M3 --> SYNTH["Synthesis net-new table"]
+  SYNTH --> VERDICT["Verdict L1 report only default"]
+```
+
+### Diagram 5 — Profile model
+
+```mermaid
+flowchart LR
+  subgraph profiles [YAML profiles]
+    DEFAULT["springboot-default JaCoCo 0.80"]
+    OPS["ops-incident L1 investigate"]
+    CUSTOM["my-service.yaml extends default"]
+  end
+  DEFAULT --> CUSTOM
+  OPS --> OPSSKILL["ops-incident-loop skill"]
+  profiles --> REPOS["repos jacoco phases_enabled ship default_mode L1"]
+```
+
+### Diagram 6 — Maker checker split
+
+```mermaid
+flowchart TB
+  subgraph roles [Never same model on implement and verify]
+    ORCH2["agentic-loop-orchestrator Plan only"]
+    PLANNER["Planner ce-plan"]
+    REVIEWER["Plan Reviewer ce-testing-reviewer"]
+    IMPL["Implementer ce-work"]
+    VERIFIER["Verifier loop-verifier"]
+    CODREV["Code Reviewer ce-code-review or pr-code-review"]
+    SHIPPER["Ship commit-push-pr babysit"]
+  end
+  ORCH2 --> PLANNER
+  ORCH2 --> REVIEWER
+  ORCH2 --> IMPL
+  ORCH2 --> VERIFIER
+  ORCH2 --> CODREV
+  ORCH2 --> SHIPPER
+  IMPL -.-> VERIFIER
+  IMPL -.-> CODREV
+```
+
+### Diagram 7 — Failure Router
+
+```mermaid
+flowchart LR
+  FAIL["Failure signal"] --> CLASSIFY{"Classify"}
+  CLASSIFY -->|JaCoCo or delta| T4["Phase 4 then 3"]
+  CLASSIFY -->|local build| T3["Phase 3"]
+  CLASSIFY -->|arch failures| T1["Phase 1"]
+  CLASSIFY -->|review P0 P1| T3b["Phase 3"]
+  CLASSIFY -->|remote CI le 3| T6["Phase 6 babysit"]
+  CLASSIFY -->|remote CI gt 3| T1b["Phase 1 plus CI logs"]
+  CLASSIFY -->|plan gap| T1c["Phase 1"]
+  CLASSIFY -->|infra flake| INBOX["STATE.md inbox"]
+  T4 --> WAIT["Present recommendation wait for human"]
+  T3 --> WAIT
+  T1 --> WAIT
+  T3b --> WAIT
+  T6 --> WAIT
+  T1b --> WAIT
+  T1c --> WAIT
+  INBOX --> WAIT
 ```
 
 ## Profiles
