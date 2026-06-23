@@ -1,0 +1,65 @@
+---
+description: Agentic Loop your-service service quality drill — build, JaCoCo, CI, review closure
+globs: your-service-*/**
+alwaysApply: true
+---
+
+# Agentic Loop Service Quality Drill (`your-service-*`)
+
+Applies to all Java/Gradle services under the `your-service-*` prefix in this workspace:
+
+- `your-service-api`
+- `your-service-api`
+- `your-service-api`
+- `your-service-api`
+- `your-service-api`
+- `your-service-api`
+
+Also follow [java-springboot-standards.mdc](./java-springboot-standards.mdc) for coding patterns, layering, and ArchUnit rules.
+
+## Quality drill — every change (any repo in scope)
+
+1. **Implement** — smallest correct fix; match repo conventions; no speculative refactors.
+2. **Regression test** — unit for branches; integration/WebMvcTest/WireMock for wiring and HTTP contracts. Every Copilot/CodeQL thread must cite a named test.
+3. **Local build:** `./gradlew clean build` from the repo root (full suite — not `-x test`).
+4. **JaCoCo gate** — read `build.gradle.kts` in the repo you are changing:
+   - your service MVP repos (`my-service-aggregator`, `cdp-my-service-central`): **line ratio ≥ 1.00** on measured packages — sync scope from [Production Readiness Tracker](https://gm-sdv.atlassian.net/wiki/spaces/DATAENG/pages/2559836685/) via [your-domain-skill skill](../skills/your-domain-skill/SKILL.md).
+   - Other `your-service-*` repos: typically **≥ 0.80** unless `build.gradle.kts` states otherwise — never assume; do not inflate exclusions to pass the gate.
+   - On failure: inspect `build/reports/jacoco/jacocoTestReport.html` and add tests for uncovered measured lines.
+5. **ce-code-review** vs `main` — fix all **P0/P1** before commit. For PR reviews (PR/Jira context, ce-code-review + Bugbot + standards/ArchUnit/SOLID/scenarios, humanized table), follow [pr-code-review.mdc](./pr-code-review.mdc).
+6. **Commit** only when the user asks; batch logically.
+7. **Push** once per batch (minimize CI workflow runs).
+8. **CI green:** `gh pr checks <n> --repo <org>/<repo-name>` — wait for:
+   - `lint`, `build-and-test`, `Trivy`, `dependency-review`, `gitleaks`, `CodeQL`
+9. **Review threads:** fix in code + test → GraphQL `addPullRequestReviewThreadReply` → `resolveReviewThread`. No “follow-up only” replies without implementation.
+10. **Wiki writeback** (workspace root): append `docs/wiki/log.md`, update `docs/wiki/current-status.md` for durable outcomes.
+
+## Required merge checks (common across repos)
+
+Branch protection on `main` expects the CI checks above plus 2 code-owner reviews, conversation resolution, and linear history. CodeQL uses GitHub default setup (`actions`, `java-kotlin` extended) — do not add a duplicate CodeQL workflow file.
+
+## Copilot / CodeQL policy
+
+- **Implement first, reply second, resolve third.**
+- Each fix must reference a regression test name and commit SHA in the thread reply.
+- Skip outdated threads only when the underlying code path no longer exists; otherwise verify fix on HEAD.
+
+## your service addendum (`*my-service*` paths only)
+
+When building your service MVP features, follow [your-domain-skill/SKILL.md](../skills/your-domain-skill/SKILL.md) — sync progress from [Production Readiness Tracker (2559836685)](https://gm-sdv.atlassian.net/wiki/spaces/DATAENG/pages/2559836685/) and linked Jira spikes before coding.
+
+Also use [spike-test-traceability.md](../docs/design/my-service/spike-test-traceability.md) for SDEGCCP test mapping. Known patterns:
+
+- `@Primary` `ObjectMapper` via `Jackson2ObjectMapperBuilder` + `JavaTimeModule` (not bare `new ObjectMapper()`).
+- Probe orchestrator: `@PreDestroy` executor shutdown; `cancelIncomplete()` on deadline.
+- Central: segment-based uptime; cache keys aligned with `StringUtils.defaultString` filter normalization.
+- In-memory local/test stand-ins must be thread-safe.
+
+## Success criteria (per PR)
+
+- `./gradlew clean build` GREEN locally
+- JaCoCo gate met per that repo's `build.gradle.kts`
+- Review threads substantively closed with test references
+- `gh pr checks` all green
+- No open P0/P1 from ce-code-review
+- Wiki log updated when the change implies durable project state

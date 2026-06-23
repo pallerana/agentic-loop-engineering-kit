@@ -1,0 +1,839 @@
+---
+description: Java Spring Boot coding standards and patterns for your monorepo services
+globs: **/*.java
+alwaysApply: false
+---
+
+# Java Spring Boot Standards (your monorepo)
+
+Apply these standards when writing or modifying Java/Spring Boot code in this workspace
+(Agentic Loop / your service services and related APIs). Patterns are derived from the
+`SpringBootProdTemplate` reference and existing Agentic Loop services.
+
+**Toolchain baseline:** Java 25 (Corretto), Spring Boot 4.x, Gradle 9.x.
+Do NOT add explicit version pins — the BOM/platform manages versions.
+
+## 1. Architecture & layering
+Controller -> Orchestration service -> granular services -> repository/client. Keep
+controllers thin (no business logic). Program to interfaces.
+
+- Each service has an interface (`IFooService`) and an impl (`impl/FooService`).
+- Inject collaborators via constructor with `@RequiredArgsConstructor`. Never use field `@Autowired`.
+- **No try-catch or Azure/external SDK calls inside controllers.** Move all I/O to the service layer and let exceptions surface to `GlobalExceptionHandler`.
+- **Centralize domain not-found handling in the service layer** — controllers must not repeat `orElseThrow(() -> new EntityNotFoundException(...))`. See §7 *Service-layer not-found and Optional lookups*.
+
+```java
+// GOOD
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class FooOrchestrationService implements IFooOrchestrationService {
+    private final ICreateFooService createFooService;
+    private final IFooRetrievalService fooRetrievalService;
+}
+
+// BAD
+@Service
+public class FooService {
+    @Autowired private CreateFooService createFooService; // field injection, concrete type
+}
+```
+
+## 2. Java 25 language features — prefer modern syntax
+
+Actively use Java 25 constructs instead of verbose equivalents:
+
+- **Records** for all immutable value types, DTOs, config holders, internal results:
+  ```java
+  public record ErrorDetail(String field, String message) { }
+  public record CellHealthSummary(String cellId, String status, Instant checkedAt) { }
+  ```
+- **Sealed classes** for closed domain hierarchies (e.g. health check result variants):
+  ```java
+  public sealed interface CheckResult permits OkResult, DegradedResult, DownResult { }
+  ```
+- **Pattern matching for `instanceof`** — no explicit cast:
+  ```java
+  // GOOD
+  if (result instanceof DegradedResult dr) { log.warn("Degraded: {}", dr.reason()); }
+  // BAD
+  if (result instanceof DegradedResult) { DegradedResult dr = (DegradedResult) result; }
+  ```
+- **Pattern matching for `switch`** (finalized):
+  ```java
+  String label = switch (result) {
+      case OkResult ok      -> "UP";
+      case DegradedResult d -> "DEGRADED: " + d.reason();
+      case DownResult dn    -> "DOWN";
+  };
+  ```
+- **Text blocks** for multi-line strings (JSON templates, SQL, YAML snippets):
+  ```java
+  String body = """
+      {"cellId": "%s", "status": "DOWN"}
+      """.formatted(cellId);
+  ```
+- **`var`** for local variables where the type is obvious from the right-hand side. Do not use `var` for fields or where it obscures the type.
+- **Virtual threads** — Spring Boot 4 enables virtual threads by default (`spring.threads.virtual.enabled=true`). Do NOT create raw `Thread` objects or tune thread-pool sizes for I/O-bound work; let the container manage concurrency.
+
+## 3. Boilerplate reduction (Lombok / records / MapStruct)
+- DTOs & entities: Lombok (`@Data`, `@Builder`, `@NoArgsConstructor`, `@AllArgsConstructor`;
+  `@SuperBuilder` + `@EqualsAndHashCode(callSuper = true)` for inheritance).
+- Prefer Java `record` over Lombok for immutable types — records are a first-class Java 25 feature.
+- Entity <-> DTO mapping: MapStruct `@Mapper` interfaces. For simple single/list mapping use a shared `DtoConverter`.
+- Never hand-write getters/setters/equals/hashCode/builders/mappers.
+
+```java
+// GOOD - prefer record for immutable value type
+public record ErrorDetail(String field, String message) { }
+
+// GOOD - MapStruct
+@Mapper
+public interface FooMapper {
+    FooResponseDTO toResponseDTO(FooEntity entity);
+}
+
+// GOOD - MapStruct variant (no multi-arg record constructors in services)
+@Mapping(target = "status", expression = "java(stale ? HealthStatus.STALE : snapshot.status())")
+CellSnapshotDTO withComputedStaleness(CellSnapshotDTO snapshot, String staleness, boolean stale);
+
+// BAD - service-layer 10+ arg record constructor
+return new CellSnapshotDTO(snapshot.cellId(), snapshot.environment(), ...);
+```
+
+Additional rules (your service PR review learnings):
+- **No multi-arg record constructors in services** — use MapStruct `@Mapping` variant methods.
+- **Records do not need `@Builder`** when MapStruct owns construction.
+- **No inline FQCN** in mapper interfaces — import types normally.
+- **Component health rows:** `CellComponentStatusDTO` + `CellComponent` enum (`@JsonValue wireName()`), not `SubsystemStatusDTO` + string literals.
+- **Injected mapper fields** must be descriptive: `cellHealthEventMapper`, not `mapper`.
+
+## 4. Apache Commons — mandatory for null/empty/blank checks
+
+Use Apache Commons (`org.apache.commons.lang3.StringUtils`, `org.apache.commons.lang3.ArrayUtils`,
+`org.apache.commons.collections4.CollectionUtils`) or Spring `StringUtils.hasText`.
+**Never write manual null/blank/empty checks — this is a code review failure.**
+
+```java
+// GOOD
+if (StringUtils.isBlank(correlationId)) { correlationId = UUID.randomUUID().toString(); }
+if (CollectionUtils.isNotEmpty(errors)) { builder.errors(errors); }
+if (ArrayUtils.isEmpty(originalArgs)) { return new Object[0]; }
+
+// BAD — banned patterns
+if (correlationId == null || correlationId.isBlank()) { ... }        // use StringUtils.isBlank
+if (name == null || name.trim().isEmpty()) { ... }                   // use StringUtils.isBlank
+if (errors != null && !errors.isEmpty()) { ... }                     // use CollectionUtils.isNotEmpty
+if (originalArgs == null || originalArgs.length == 0) { ... }       // use ArrayUtils.isEmpty
+```
+
+Apache Commons is already on the classpath transitively; import from:
+- `org.apache.commons.lang3.StringUtils`
+- `org.apache.commons.lang3.ArrayUtils`
+- `org.apache.commons.collections4.CollectionUtils`
+- `org.apache.commons.collections4.MapUtils`
+
+## 5. Validation (Bean Validation + custom annotations)
+- Validate request DTOs with standard constraints (`@NotBlank`, `@Size`, `@Email`, `@Min`).
+- **Never do manual null/blank checks in controllers.** Declare constraints on the DTO and annotate the controller parameter with `@Valid`.
+- Extract reusable/business rules into a **custom annotation** (`@Constraint(validatedBy = ...)`) backed by a `ConstraintValidator` — declare once, reuse everywhere.
+- Controllers trigger validation with `@Valid` (body) and `@Validated` (class for params).
+- Constraint `message` MUST be a property key in braces, never an inline literal.
+
+```java
+// GOOD - reusable custom constraint
+@Documented
+@Constraint(validatedBy = CountryCodeValidator.class)
+@Target({ElementType.FIELD, ElementType.PARAMETER})
+@Retention(RetentionPolicy.RUNTIME)
+public @interface ValidCountryCode {
+    String message() default "{account.countryCode.invalid}";
+    Class<?>[] groups() default {};
+    Class<? extends Payload>[] payload() default {};
+}
+
+// GOOD - DTO usage
+@NotBlank(message = "{account.name.notblank}")
+@Size(min = 1, max = 255, message = "{account.name.size}")
+private String accountName;
+
+// BAD - manual check + inline literal in controller
+if (name == null || name.trim().isEmpty()) {
+    return ResponseEntity.badRequest().body("Name cannot be empty");
+}
+```
+
+## 6. i18n & messages
+- All validation/error/user-facing strings live in resource bundles, never hardcoded in code:
+  - `ValidationMessages.properties` — constraint messages.
+  - `i18n/messages.properties` (+ locale variants like `messages_en.properties`) — business/error messages.
+- Resolve messages via a `MessageSource`-backed `Translator` helper (with US fallback).
+- Key naming: `module.field.constraint` (e.g. `account.email.size`) and `error.<domain>.<case>`
+  (e.g. `error.account.notFound`). Placeholders use numeric indices `{0}`, `{1}`.
+- Error message keys must be centralized in a `constants/ErrorMessageConstants.java` final class.
+
+```java
+// GOOD
+String msg = Translator.getMessage(ErrorMessageConstants.ERROR_INTERNAL_SERVER);
+String msg = Translator.getMessage("error.account.notFound", accountId);
+
+// BAD
+String msg = "Account not found with ID: " + accountId;
+String msg = Translator.getMessage("error.account.notFound");  // literal key inline
+```
+
+## 7. Error handling
+One `@RestControllerAdvice GlobalExceptionHandler` per service. Map every exception to a
+consistent `ApiErrorResponseDTO` (`timestamp`, `status`, `message`, `errors`) built via
+`ExceptionUtils`. **Never return `ResponseEntity<String>` from an exception handler.**
+
+Required handlers (in order):
+1. `MethodArgumentNotValidException` → 400 + field `errors` map
+2. `HttpMessageNotReadableException`, `MethodArgumentTypeMismatchException` → 400
+3. `IllegalArgumentException` → 400 (generic i18n message; do NOT echo `ex.getMessage()`)
+4. `AuthorizationDeniedException` → 403 (generic i18n; log server-side only)
+5. `NoResourceFoundException` → 404
+6. `Exception` → 500 catch-all (log full exception; return generic i18n message)
+
+**Never leak `ex.getMessage()` or stack traces to clients.** Log server-side; return i18n keys.
+
+Timestamp format must be deterministic — use `DateTimeFormatter.ISO_OFFSET_DATE_TIME`:
+```java
+.timestamp(OffsetDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
+```
+
+```java
+@Slf4j
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ApiErrorResponseDTO> handleValidation(MethodArgumentNotValidException ex) {
+        log.warn("Validation error: {}", ex.getMessage());
+        Map<String, String> errors = ExceptionUtils.processValidationErrors(
+            ex.getBindingResult().getAllErrors().toArray(new ObjectError[0]));
+        return ResponseEntity.badRequest().body(
+            ExceptionUtils.buildErrorResponse(HttpStatus.BAD_REQUEST,
+                Translator.getMessage(ErrorMessageConstants.ERROR_VALIDATION_FAILED), errors));
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ApiErrorResponseDTO> handleAll(Exception ex) {
+        log.error("Unhandled exception", ex);   // full trace server-side only
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+            ExceptionUtils.buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR,
+                Translator.getMessage(ErrorMessageConstants.ERROR_INTERNAL_SERVER), null));
+    }
+}
+```
+
+Add `@JsonInclude(JsonInclude.Include.NON_NULL)` on `ApiErrorResponseDTO` so the `errors` field
+is omitted from the JSON when absent (not serialized as `null`).
+
+### Service-layer not-found and Optional lookups
+
+**Bottom line:** Centralizing exceptions in the service layer is good practice in this codebase.
+Controllers stay lean — delegate and return `ResponseEntity.ok(...)`; do not scatter
+`orElseThrow(() -> new EntityNotFoundException(...))` across controllers.
+
+When a lookup can **miss** and callers disagree on whether miss means error (404 endpoint) vs
+normal control flow (fallback path, negative cache), expose **two service methods** — same pattern
+as Spring Data `findById` vs `getById`:
+
+| Method | Returns | Use when |
+|--------|---------|----------|
+| `findX(...)` | `Optional<X>` | Composition, cache-friendly lookup, miss is not always an error |
+| `requireX(...)` / `readXById(...)` | `X` (throws `EntityNotFoundException`) | Callers that require a document; **not** `@Cacheable` itself |
+
+The throwing wrapper delegates to the cached `find*` method so negative caching still works.
+**Never throw inside `@Cacheable`** — exceptions bypass cache population and defeat negative-cache
+goals (see Agentic Loop assignments `findAltId` / `requireAltId` pattern).
+
+```java
+// GOOD — cached lookup + service-layer throw (controller stays thin)
+@Cacheable(value = "altIds", key = "#entityType + '-' + #id")
+public Optional<AltId> findAltId(String id, CellEntityType entityType) {
+    return altIdRepository.findById(id, partitionKey(id, entityType));
+}
+
+public AltId requireAltId(String id, CellEntityType entityType) {
+    return findAltId(id, entityType)
+            .orElseThrow(() -> new EntityNotFoundException(entityType, AltId.class));
+}
+
+// Controller — no orElseThrow duplication
+return ResponseEntity.ok(altIdService.requireAltId(id, entityType));
+```
+
+```java
+// BAD — repeated orElseThrow in every controller
+return ResponseEntity.ok(altIdService.findAltId(id, entityType)
+        .orElseThrow(() -> new EntityNotFoundException(entityType, AltId.class)));
+
+// BAD — throw inside @Cacheable (misses not negative-cached)
+@Cacheable(value = "altIds", key = "#entityType + '-' + #id")
+public AltId readAltIdByIdAndEntityType(String id, CellEntityType entityType, Class<?> type) {
+    return altIdRepository.findById(id, partitionKey(id, entityType))
+            .orElseThrow(() -> new EntityNotFoundException(entityType, type));
+}
+
+// BAD — ResponseEntity.of(optional) when ApiErrorResponseDTO shape is required
+return ResponseEntity.of(altIdService.findAltId(id, entityType));  // 404 skips GlobalExceptionHandler
+```
+
+**Spring AOP note:** `require*` must call `find*` through the Spring proxy (separate bean,
+`@Lazy` self-injection, or facade). Same-class `this.find*()` bypasses `@Cacheable`.
+
+Domain exceptions (`EntityNotFoundException`, `BadRequestException`, etc.) are thrown in the
+service layer; `GlobalExceptionHandler` maps them to HTTP status and `ApiErrorResponseDTO`.
+
+## 8. Constants & enums (no magic values)
+- `final` utility/constant classes with a private constructor.
+- Centralize API endpoints, HTTP headers, DB column names, error message keys, and MDC keys.
+- All string literals that appear more than once MUST be in a constants class.
+- Use enums for fixed value sets (status, prefixes).
+- **`ApiConstants` must cover every path segment**, including nested routes (`EVENTS = "/events"`, `EVENT_STREAM = "/stream"`). Compose controller mappings from constants only.
+- **Domain enums** for fixed component/status sets (`CellComponent`, `HealthStatus`); probe and event payloads reference enums, not free-form strings.
+
+```java
+public final class CommonConstants {
+    private CommonConstants() { }
+    public static final String API_V1_PREFIX = "/api/v1";
+    public static final String IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
+    public static final String CORRELATION_ID_HEADER = "X-Correlation-Id";
+    public static final String MDC_CORRELATION_KEY = "correlationId";
+}
+
+public final class ErrorMessageConstants {
+    private ErrorMessageConstants() { }
+    public static final String ERROR_INTERNAL_SERVER  = "error.internal.server";
+    public static final String ERROR_ACCESS_DENIED    = "error.access.denied";
+    public static final String ERROR_BAD_REQUEST      = "error.bad.request";
+    public static final String ERROR_VALIDATION_FAILED = "error.validation.failed";
+    public static final String ERROR_RESOURCE_NOT_FOUND = "error.resource.notFound";
+}
+```
+
+## 9. REST / API conventions
+- Build `@RequestMapping` paths from constants; return `ResponseEntity<T>`.
+- Document every endpoint with OpenAPI annotations (`@Tag`, `@Operation`, `@ApiResponses`).
+- **Error response schemas must appear in `@ApiResponse` annotations** using `@Content(schema = @Schema(implementation = ApiErrorResponseDTO.class))`.
+- Idempotency via an `Idempotency-Key` header is the pattern for create/update where needed (optional).
+- **Validate correlation ID from incoming headers** — accept only if it matches UUID format or a bounded length/charset; otherwise generate a new one. Use `StringUtils.isBlank()` for the absent check.
+
+```java
+// GOOD - OpenAPI with error schema
+@Operation(summary = "Create foo")
+@ApiResponses({
+    @ApiResponse(responseCode = "201", description = "Created"),
+    @ApiResponse(responseCode = "400", description = "Validation failed",
+        content = @Content(schema = @Schema(implementation = ApiErrorResponseDTO.class))),
+    @ApiResponse(responseCode = "500", description = "Internal error",
+        content = @Content(schema = @Schema(implementation = ApiErrorResponseDTO.class)))
+})
+```
+
+## 10. Configuration & cross-cutting concerns
+- Prefer record-based `@ConfigurationProperties` over scattered `@Value` for typed config.
+- Use a shared `RestClient` bean with explicit connect/read timeouts. Never `new RestTemplate()` per call.
+- Resilience: Spring-native `@EnableResilientMethods` on the app class + `@Retryable` on outbound calls. Do not add Resilience4j unless a feature requires circuit-breaking.
+- Add a `CorrelationIdFilter` that puts `X-Correlation-Id` into the SLF4J MDC.
+- **Virtual threads** — confirm `spring.threads.virtual.enabled=true` in `application.yml`. Do not configure raw Tomcat/Jetty thread-pool sizes for I/O-bound services under Spring Boot 4.
+
+```java
+@Configuration
+public class RestClientConfig {
+    @Bean
+    public RestClient restClient(
+            @Value("${app.rest-connect-timeout-ms:5000}") int connectMs,
+            @Value("${app.rest-read-timeout-ms:10000}") int readMs) {
+        var factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(connectMs);
+        factory.setReadTimeout(readMs);
+        return RestClient.builder().requestFactory(factory).build();
+    }
+}
+
+// Record-based config (preferred over @Value fields)
+@ConfigurationProperties(prefix = "cdp.health")
+public record HealthConfig(int aggregatorTimeoutMs, String centralBaseUrl) { }
+
+// GOOD - yaml drives @Scheduled; constant drives @DefaultValue only
+@Scheduled(fixedDelayString = "${cdp.health.publisher.heartbeat-interval-ms:15000}")
+public void publishHeartbeat() { ... }
+
+public record PublisherProperties(
+    @DefaultValue(CellHealthConstants.DEFAULT_HEARTBEAT_INTERVAL_MS) int heartbeatIntervalMs) {}
+```
+
+Additional rules:
+- **`application.yml` holds operational defaults**; `@ConfigurationProperties` records reference `*Constants` for `@DefaultValue`, not duplicate magic numbers in Java and yaml.
+- **One `RestClient` bean** per service from `RestClientProperties` — do not create a second ad-hoc bean in another `@Configuration` class.
+- **`@Qualifier` + named constant** when injecting `List<Interface>` beans that have wrapper variants (e.g. `OBSERVED_HEALTH_PROBES`).
+
+### Caching (your service / Agentic Loop pattern)
+- Enable Spring Cache once per app: `@EnableCaching` on the `@SpringBootApplication` class.
+- Configure Caffeine via yaml only: `spring.cache.type: caffeine` + `spring.cache.caffeine.spec` (e.g. `maximumSize=100,expireAfterWrite=30s`). Do **not** duplicate TTL in Java builders.
+- **All application caching flows through `CellHealthCacheService`** (or repo-specific `*CacheService`) using `@Cacheable(sync=true)` on read methods and `@CacheEvict` / `@Caching` on writes. Controllers, inventory services, event processors, and repositories **delegate** — they do not carry `@Cacheable`.
+- Cache names live in `CellHealthConstants` (e.g. `CACHE_CELL_SNAPSHOTS`, `CACHE_HEALTHZ_ROLLUP`).
+- Evict affected keys **before** SSE broadcast or downstream publish so clients never see stale post-write data.
+- Do **not** cache DTOs with computed staleness — cache raw snapshots; apply staleness after cache hit in the service layer.
+- SSE connection tables belong in a dedicated `SseEmitterRegistry` `@Component`, not on domain services.
+
+```java
+@Service
+@RequiredArgsConstructor
+public class CellHealthCacheService implements ICellHealthCacheService {
+    private final ICellSnapshotRepository repository;
+
+    @Cacheable(value = CellHealthConstants.CACHE_CELL_SNAPSHOTS, key = "#cellId", sync = true)
+    public Optional<CellSnapshotDTO> getRawCell(String cellId) {
+        return repository.findByCellId(cellId);
+    }
+
+    @CacheEvict(value = {CellHealthConstants.CACHE_CELL_SNAPSHOTS, CellHealthConstants.CACHE_CELL_LIST}, allEntries = true)
+    public void evictAll() { }
+}
+```
+
+## 11. Persistence
+- your monorepo services use Azure Cosmos DB (Spring Data Cosmos) for persistence and
+  Event Hub (Spring Cloud Stream / StreamBridge) for messaging.
+- For relational data, use the JPA `Specification` dynamic-filter pattern with
+  `JpaSpecificationExecutor`, a `BaseEntity` for audit fields, and field-name constants
+  (no hardcoded property strings in predicates).
+
+## 12. Logging
+- Use SLF4J via Lombok `@Slf4j`. Always parameterize; never concatenate strings; never `printStackTrace()`.
+- **Never log sensitive data** (tokens, credentials, PII).
+- **Never log `ex.getMessage()` at WARN/ERROR if the value flows from user input** — a full exception at ERROR is fine since it stays server-side.
+
+```java
+log.info("Created account {}", accountId);     // GOOD
+log.error("Unhandled exception", ex);          // GOOD - full exception, server-side
+log.info("Created account " + accountId);      // BAD - concatenation
+log.warn("Error: {}", ex.getMessage());        // BAD - may leak user-controlled input
+```
+
+## 13. Testing & quality — framework versions & mandatory patterns
+
+**Exact versions on the classpath (Spring Boot 4.0.6 BOM):**
+- JUnit **6.0.3** (major new version — not 5!)
+- Mockito **5.20.0**
+- AssertJ **3.27.7**
+- Spring Security Test **7.0.5**
+- Spring Test **7.0.7**
+
+### 13a. Unit tests — JUnit 6 + Mockito 5 + AssertJ
+
+**`@MockBean`/`@SpyBean` are removed in Spring Boot 4.** Use `@MockitoBean`/`@MockitoSpyBean` only in
+Spring-context tests. For pure unit tests use `@ExtendWith(MockitoExtension.class)`.
+
+In Spring Boot 4, `MockitoTestExecutionListener` is **not** auto-registered — **always add
+`@ExtendWith(MockitoExtension.class)` explicitly** to unit test classes.
+
+```java
+// GOOD — pure unit test
+@ExtendWith(MockitoExtension.class)
+class CellHealthAggregatorTest {
+
+    @Mock
+    private ICellHealthProbeService probeService;
+
+    @InjectMocks
+    private CellHealthAggregatorService aggregator;
+
+    @Captor
+    ArgumentCaptor<String> cellIdCaptor;
+
+    @Test
+    @DisplayName("given critical dependency DOWN, aggregation result is DOWN")
+    void givenCriticalDepDown_whenAggregate_thenResultIsDown() {
+        when(probeService.probe("cosmos")).thenReturn(CheckResult.DOWN);
+
+        var result = aggregator.aggregate("cell-01");
+
+        assertThat(result.status()).isEqualTo("DOWN");
+        verify(probeService).probe(cellIdCaptor.capture());
+        assertThat(cellIdCaptor.getValue()).isEqualTo("cosmos");
+    }
+}
+```
+
+**Prefer AssertJ `assertThat` over JUnit `assertEquals`.** JUnit assertions are permitted but AssertJ
+produces richer failure messages and chains fluently.
+
+```java
+// GOOD — AssertJ fluent, self-documenting failure message
+assertThat(response.getBody())
+    .isNotNull()
+    .satisfies(body -> {
+        assertThat(body.status()).isEqualTo(500);
+        assertThat(body.timestamp()).isNotNull();
+        assertThat(body.message()).doesNotContain("internal-secret");
+    });
+
+// GOOD — recursive comparison for DTOs (ignores auto-generated fields)
+assertThat(actualDto)
+    .usingRecursiveComparison()
+    .ignoringFields("timestamp", "id")
+    .isEqualTo(expectedDto);
+
+// GOOD — soft assertions: collect ALL failures instead of stopping at first
+SoftAssertions.assertSoftly(softly -> {
+    softly.assertThat(response.status()).isEqualTo(400);
+    softly.assertThat(response.message()).isNotBlank();
+    softly.assertThat(response.errors()).containsKey("cellId");
+});
+
+// BAD
+assertEquals(500, response.getBody().getStatus());  // short-circuits on fail, poor message
+assertNull(response.getBody().getErrors());          // use assertThat(...).isNull()
+```
+
+**`@Nested` for behavior grouping — structure tests as Given/When/Then trees:**
+
+```java
+@ExtendWith(MockitoExtension.class)
+class CellHealthRollupTest {
+
+    @Nested
+    @DisplayName("when all subsystems are healthy")
+    class AllHealthy {
+        @Test void healthzReturns200() { ... }
+        @Test void statusPayloadShowsAllUp() { ... }
+    }
+
+    @Nested
+    @DisplayName("when a critical dependency is down")
+    class CriticalDown {
+        @Test void healthzReturns503() { ... }
+        @Test void failedSubsystemsListIsPopulated() { ... }
+    }
+}
+```
+
+**`@ParameterizedTest` for data-driven cases — avoid copy-paste:**
+
+```java
+@ParameterizedTest(name = "status={0} → httpCode={1}")
+@CsvSource({"UP, 200", "DEGRADED, 200", "DOWN, 503"})
+void healthzStatusMapsToCorrectHttpCode(String status, int expectedCode) {
+    when(rollupService.compute()).thenReturn(new HealthRollup(status));
+    assertThat(controller.healthz().getStatusCode().value()).isEqualTo(expectedCode);
+}
+```
+
+**Mockito 5.20 — generic types in `MockedStatic`/`MockedConstruction` (no raw-type warnings):**
+
+```java
+// GOOD — typed generic mock (Mockito 5.20+)
+try (MockedStatic<AzureResourceManager> mocked =
+        Mockito.mockStatic(AzureResourceManager.class)) {
+    mocked.when(() -> AzureResourceManager.authenticate(any(), any()))
+          .thenReturn(authenticated);
+    // ...
+}
+
+// BAD (pre-5.20 workaround no longer needed)
+// MockedConstruction<MyGenericType> raw = mockConstruction(MyGenericType.class);
+```
+
+### 13b. Web-layer slice tests — `@WebMvcTest`
+
+Use `org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest` (new Spring Boot 4 package).
+Use `@MockitoBean` (not `@MockBean` — removed in Boot 4).
+`@SpringBootTest`/`MockMvc` tests must run filters to exercise `CorrelationIdFilter` and security.
+
+```java
+@WebMvcTest(CellHealthController.class)
+@Import({SecurityConfig.class, GlobalExceptionHandler.class, MessageSourceConfig.class, Translator.class})
+@AutoConfigureMockMvc
+class CellHealthControllerTest {
+
+    @Autowired MockMvc mockMvc;
+
+    @MockitoBean  // NOT @MockBean — that annotation is removed in Boot 4
+    ICellHealthAggregatorService aggregatorService;
+
+    @Test
+    @WithMockUser
+    void whenAggregationFails_returns500WithApiErrorShape() throws Exception {
+        when(aggregatorService.aggregate(any())).thenThrow(new RuntimeException("cosmos timeout"));
+
+        mockMvc.perform(get("/my-service/v1/healthz"))
+               .andExpect(status().isInternalServerError())
+               .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+               .andExpect(jsonPath("$.status").value(500))
+               .andExpect(jsonPath("$.timestamp").exists())
+               .andExpect(jsonPath("$.message").exists())
+               .andExpect(jsonPath("$.errors").doesNotExist()); // NON_NULL: absent, not null
+    }
+
+    @Test
+    @WithMockUser
+    void validationFailure_returns400WithFieldErrors() throws Exception {
+        mockMvc.perform(post("/my-service/v1/status")
+                        .content("{}")
+                        .contentType(MediaType.APPLICATION_JSON))
+               .andExpect(status().isBadRequest())
+               .andExpect(jsonPath("$.errors").isMap());
+    }
+
+    @Test
+    void unauthenticatedAccess_returns403() throws Exception {
+        mockMvc.perform(get("/my-service/v1/healthz"))
+               .andExpect(status().isForbidden());
+    }
+}
+```
+
+### 13c. Integration tests — `RestTestClient` (Spring Boot 4, replaces `TestRestTemplate`)
+
+`TestRestTemplate` is deprecated. Use `RestTestClient` with `@AutoConfigureRestTestClient`:
+
+```java
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@AutoConfigureRestTestClient
+@Testcontainers
+class CellHealthAggregatorIT {
+
+    @Autowired
+    RestTestClient restClient;
+
+    @Test
+    void actuatorHealthIsUp() {
+        restClient.get()
+                  .uri("/actuator/health")
+                  .exchange()
+                  .expectStatus().is2xxSuccessful()
+                  .expectBody()
+                  .jsonPath("$.status").isEqualTo("UP");
+    }
+}
+```
+
+### 13d. JaCoCo & coverage gates
+
+- Keep the line coverage gate at **0.80**.
+- Exclude `*Application.class`, `**/configuration/**`, `**/constants/**`, `**/dto/**`, `**/enum/**`
+  from coverage measurement — these are config/structural, not logic.
+- Measured packages (`controllers`, `services`, `util`, `i18n`) must genuinely exceed 0.80.
+  Do not add exclusions to inflate the ratio artificially.
+
+## 14. Test infrastructure — OOP patterns to eliminate duplication
+
+### 14a. Abstract base test classes
+
+Share Spring context, fixture setup, and common assertions via inheritance. This avoids repeating
+`@Import`, `@TestPropertySource`, or `@WithMockUser` across every test class.
+
+```java
+// src/test/java/.../support/AbstractWebMvcTest.java
+@WebMvcTest
+@Import({SecurityConfig.class, GlobalExceptionHandler.class, MessageSourceConfig.class, Translator.class})
+@AutoConfigureMockMvc
+abstract class AbstractWebMvcTest {
+
+    @Autowired
+    protected MockMvc mockMvc;
+
+    // Shared assertion helper — no duplication across concrete test classes
+    protected void assertApiErrorShape(ResultActions result, int status) throws Exception {
+        result.andExpect(content().contentType(MediaType.APPLICATION_JSON))
+              .andExpect(jsonPath("$.status").value(status))
+              .andExpect(jsonPath("$.timestamp").exists())
+              .andExpect(jsonPath("$.message").exists());
+    }
+}
+
+// Concrete test — inherits wiring, no repetition
+@WebMvcTest(CellHealthController.class)
+class CellHealthControllerTest extends AbstractWebMvcTest {
+
+    @MockitoBean ICellHealthAggregatorService aggregatorService;
+
+    @Test
+    @WithMockUser
+    void whenAggregationFails_returns500() throws Exception {
+        when(aggregatorService.aggregate(any())).thenThrow(new RuntimeException());
+        assertApiErrorShape(mockMvc.perform(get("/my-service/v1/healthz")), 500);
+    }
+}
+```
+
+### 14b. Test fixtures — record-based object mothers
+
+Use Java records as factories for canonical test values. Avoids scattered magic strings and keeps
+domain language in one place.
+
+```java
+// src/test/java/.../support/CellHealthFixtures.java
+public final class CellHealthFixtures {
+    private CellHealthFixtures() { }
+
+    public static final String CELL_ID         = "cell-us-east-01";
+    public static final String COSMOS_ENDPOINT = "https://cosmos-test.documents.azure.com";
+
+    public static CellStatusDTO healthyCell() {
+        return new CellStatusDTO(CELL_ID, "UP", List.of(), Instant.now());
+    }
+
+    public static CellStatusDTO degradedCell(String reason) {
+        return new CellStatusDTO(CELL_ID, "DEGRADED", List.of(reason), Instant.now());
+    }
+
+    public static CellStatusDTO downCell() {
+        return new CellStatusDTO(CELL_ID, "DOWN", List.of("cosmos", "eventhub"), Instant.now());
+    }
+}
+```
+
+### 14c. Testcontainers 2.0 — shared container via `@TestConfiguration`
+
+Testcontainers **2.0** renamed all modules to `testcontainers-{name}` (e.g., `testcontainers-postgresql`).
+Use `@ServiceConnection` to auto-wire properties — no manual `@DynamicPropertySource` needed.
+Use a shared `@TestConfiguration` to start one container per test suite run:
+
+```java
+// Gradle: testImplementation("org.testcontainers:testcontainers-cosmosdb")
+// For Azure Cosmos and Event Hub use WireMock or the Azure SDK emulator image
+
+@TestConfiguration(proxyBeanMethods = false)
+class TestInfraConfig {
+
+    @Bean
+    @ServiceConnection               // auto-wires spring.data.* properties
+    CosmosDBEmulatorContainer cosmosDB() {
+        return new CosmosDBEmulatorContainer("mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:vnext-preview")
+                .withReuse(true);
+    }
+}
+
+// Integration base class
+@SpringBootTest
+@Import(TestInfraConfig.class)
+@Testcontainers
+abstract class AbstractCellHealthIT {
+    // shared wiring — all IT classes extend this
+}
+```
+
+### 14d. `@ParameterizedClass` (JUnit 6) — parameterize entire test classes
+
+JUnit 6 introduces `@ParameterizedClass` to run a whole class with different inputs:
+
+```java
+@ParameterizedClass
+@ValueSource(strings = {"cell-us-east-01", "cell-eu-west-01", "cell-ap-southeast-01"})
+class MultiCellAggregationTest {
+
+    @Parameter
+    String cellId;
+
+    @MockitoBean ICellHealthAggregatorService aggregatorService;
+
+    @Test
+    void aggregatesHealthForEachCell() {
+        when(aggregatorService.aggregate(cellId)).thenReturn(CellHealthFixtures.healthyCell());
+        assertThat(aggregatorService.aggregate(cellId).status()).isEqualTo("UP");
+    }
+}
+```
+
+### 14e. Spring Framework 7 context caching — `@Nested` hierarchy note
+
+`SpringExtension` now uses **test-method scope** for `ExtensionContext`. If `@Nested` tests inside
+a `@SpringBootTest` class lose injected beans between outer/inner class boundaries, annotate the
+top-level class:
+
+```java
+@SpringBootTest
+@SpringExtensionConfig(useTestClassScopedExtensionContext = true)
+class CellHealthServiceIT {
+
+    @Autowired ICellHealthAggregatorService service;
+
+    @Nested class WhenCriticalDepDown { /* inherits context correctly */ }
+    @Nested class WhenAllHealthy      { /* inherits context correctly */ }
+}
+```
+
+### 14f. Anti-patterns — what NOT to do
+
+```java
+// BAD — @MockBean is REMOVED in Spring Boot 4 (causes NoSuchBeanDefinitionException)
+@MockBean private SomeService svc;                     // use @MockitoBean
+
+// BAD — missing MockitoExtension; mocks won't be initialized in Boot 4
+class FooTest {
+    @Mock SomeDep dep;                                  // NPE at runtime
+    // add @ExtendWith(MockitoExtension.class)
+}
+
+// BAD — JUnit assertEquals; switch to AssertJ assertThat for richer messages
+assertEquals(200, response.getStatusCode().value());
+
+// BAD — addFilters = false hides security misconfigurations
+mockMvc = MockMvcBuilders.standaloneSetup(controller).addFilters().build();
+
+// BAD — Testcontainers 1.x module name (does not resolve in TC 2.0)
+testImplementation("org.testcontainers:postgresql")   // use testcontainers-postgresql
+
+// BAD — new instance per test pollutes context cache; use @TestConfiguration
+@SpringBootTest
+class FooIT {
+    @Container PostgreSQLContainer<?> db = new PostgreSQLContainer<>("postgres:16");
+}
+```
+
+## 15. Do NOT — recurring review findings (build-enforced)
+
+These anti-patterns were re-flagged across multiple reviews. They are now enforced by
+`ArchitectureRulesTest` (ArchUnit) and JaCoCo so violations fail the build, not just review.
+Do not reintroduce them.
+
+| # | Do NOT | Do instead | Enforcement |
+|---|--------|-----------|-------------|
+| 1 | Call external cloud SDKs (`com.azure..`, AWS, etc.) from `..controllers..` | Keep controllers thin; put SDK calls in the service layer | ArchUnit `controllersMustNotDependOnExternalCloudSdks` |
+| 2 | Use a `private static` field set via `@Autowired` (static service locator) | Constructor-inject an instance `@Component` | ArchUnit `mainCodeMustNotUseMutableStaticFields` (static fields must be `final`) |
+| 3 | Assert with JUnit `Assertions.*` (`assertEquals`, `assertTrue`) | Use AssertJ `assertThat(...)` | ArchUnit `testsMustUseAssertJNotJUnitAssertions` |
+| 4 | Pin a dependency the Spring Boot BOM already manages (e.g. `commons-lang3:3.x`) | Declare it version-less; pin only non-BOM libs (e.g. `commons-collections4`) | code review |
+| 5 | Read config via method-param `@Value` for related settings | Bind a `@Validated @ConfigurationProperties` **record** with `@DefaultValue` + `@Positive` | code review |
+| 6 | Initialize constant path lists with `new ArrayList<>(Arrays.asList(...))` | Use immutable `List.of(...)` | code review |
+| 7 | Expose `/actuator/**` (incl. `/actuator/prometheus`) unauthenticated | Permit only `/actuator/health/**` + `/actuator/info`; keep metrics authenticated | code review |
+| 8 | Hardcode the API version in `OpenApiConfig` | Externalize to `cdp.api.version` in `application.yml` and inject via `@Value` | code review |
+| 9 | Build error responses as bare strings or per-handler maps | Route every handler through `ExceptionUtils.buildErrorResponse(...)` returning `ApiErrorResponseDTO` with i18n keys from `ErrorMessageConstants` | code review |
+| 10 | Leak exception messages / resource paths to clients | Return only generic i18n messages; log details server-side | code review |
+| 11 | Drop duplicate validation keys silently (`(a,b) -> a`) | Merge by concatenation (`a + "; " + b`) | code review |
+| 12 | Register MDC/correlation filters at default order | `@Order(Ordered.HIGHEST_PRECEDENCE)` and `MDC.clear()` in `finally` (virtual-thread safe) | code review |
+| 13 | `new RecordDTO(...)` with many args in services/mappers | MapStruct `@Mapping` variant methods or dedicated mapper | code review |
+| 14 | Inline package names in signatures (`com.example.app...HealthStatus`) | Normal imports | code review |
+| 15 | Short injected names (`mapper`, `service`) | Descriptive names matching type (`cellHealthEventMapper`) | code review |
+| 16 | Hardcoded `@Scheduled(fixedDelayString = "15000")` | Property placeholder `${cdp...}` + yaml + constant default | code review |
+| 17 | Hardcoded path strings in controllers (`"/events"`, `"/stream"`) | `ApiConstants` segments | code review |
+| 18 | String-matching HTTP codes in exception messages (`contains("429")`) | `HttpStatus` / SDK `getStatusCode()` | code review |
+| 19 | Stub `IHealthProbe` bean that throws on use | Factory that builds real probe instances (`PeerProbeFactory`) | code review |
+| 20 | Duplicate `RestClient` beans with different timeout sources | Single bean from `RestClientProperties` | code review |
+| 21 | Raw `Caffeine.newBuilder()` or `private final Cache<>` / `ConcurrentHashMap` fields on `@Service`/`@Repository` production beans | `@EnableCaching` + yaml spec; sole owner `CellHealthCacheService` with `@Cacheable`/`@CacheEvict`; test/local in-memory stores `@Profile("local","test")` only | ArchUnit `productionBeansMustNotDeclareMutableCollectionFields` |
+| 22 | Repeat `optional.orElseThrow(() -> new EntityNotFoundException(...))` in controllers | Add `require*` / `read*ById` on the service that delegates to cached `find*`; controller calls the throwing method (§7) | code review |
+| 23 | Throw inside `@Cacheable` when negative caching of misses is required | Keep `@Cacheable` on `find*` returning `Optional`; add non-cached `require*` wrapper | code review |
+
+## 16. Health / probe patterns (your service reference)
+
+| Pattern | Rule |
+|---------|------|
+| Dynamic probes | Use a `@Component` factory (`PeerProbeFactory`) that returns probe instances; never register a stub bean that throws `UnsupportedOperationException` |
+| HTTP status detection | Use `HttpStatus.TOO_MANY_REQUESTS.value()` or SDK `getStatusCode()` + `instanceof` — never `ex.getMessage().contains("429")` |
+| Probe detail strings | i18n via `ProbeMessageResolver` + `messages.properties`; log full exception at ERROR, return resolved message to rollup |
+| Executor lifecycle | Custom `ExecutorService` beans need `@PreDestroy shutdown()`; cancel in-flight futures when deadlines expire |
+| Micrometer gauges | Hold mutable values in `AtomicInteger`/`AtomicLong` registered once — do not call `meterRegistry.gauge(name, primitive)` on every update |
+| Statelessness | Horizontally scalable production beans must **not** declare class-level `Map`/`List`/`Set`/`Queue`/`Cache` fields. Shared durable state → Cosmos/Event Hub SDK. Ephemeral read cache → Spring `CacheManager` via centralized `CellHealthCacheService` (`@Cacheable`/`@CacheEvict`). SSE connections → `SseEmitterRegistry`. In-memory repos/consumers are `@Profile("local")` / `@Profile("test")` only |
+| Control-plane scope | Cell-type–gated probe lists (infra always; peer services only for `controlplane` cells); real actuator indicators live in peer repos (separate Jira, e.g. PROJ-123) |
+
+### Enforcement mechanism
+
+- `src/test/java/com/gm/cdp/architecture/ArchitectureRulesTest.java` — ArchUnit rules above.
+- `build.gradle.kts` — JaCoCo measures `configuration` + `dto` packages (0.80 line gate); Lombok-generated
+  members are excluded via `lombok.config` (`lombok.addLombokGeneratedAnnotation = true`).
+- Keep demo/scaffold controllers and services **out** of the repo; they are an anti-pattern factory.

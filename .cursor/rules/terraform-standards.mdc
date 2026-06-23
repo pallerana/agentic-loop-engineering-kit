@@ -1,0 +1,39 @@
+---
+description: Terraform and deployment standards for CBA foundation (infra/) — human gates in agent loop
+globs: "**/*.tf,**/deployment.yaml,**/deployment.yml"
+alwaysApply: false
+---
+
+# CBA Terraform standards
+
+Applies to `infra//` and cell infrastructure Terraform. **Agent loop never runs `terraform apply`.**
+
+## Patterns (from infra/)
+
+- **Modules:** prefer existing modules under `automation/terraform/` over inline resources.
+- **Naming:** `azurerm_*` resources use consistent `primary` / `secondary` pairing when `var.secondary_region` is set.
+- **Event Hub:** consumer groups named explicitly (e.g. `my-service-central` on `my-service-status` hub).
+- **depends_on:** explicit when module outputs are required before child resources.
+- **Tags:** follow workspace tagging conventions in parent module variables.
+
+## Agent loop constraints
+
+| Action | Allowed in loop |
+|--------|-----------------|
+| `terraform fmt` / `validate` | Yes (read-only validation) |
+| `terraform plan` | Yes with human review of output |
+| `terraform apply` | **No** — human gate only |
+| Edit prod `*.tfvars` | **No** — denylist hook |
+
+## Review checklist
+
+- [ ] No secrets in `.tf` files (use Key Vault / variable refs)
+- [ ] DR pattern respected when `secondary_region` non-empty
+- [ ] knowledge-graph path from resource → consuming Java service documented in wiki if new
+- [ ] DDog monitors updated in `DDog_1000896_iac_live` when observability surface changes
+
+## Cross-links
+
+- [`infra/`](../../infra//) — foundation Terraform
+- [`observability-ddog.md`](../../docs/wiki/observability-ddog.md)
+- [`loop-kit/GATES.md`](../../loop-kit/GATES.md) — human inbox for infra flake

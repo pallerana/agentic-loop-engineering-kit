@@ -1,0 +1,32 @@
+---
+description: >-
+  Cherry-picked Spring Boot integration testing patterns (jabrena/cursor-rules-java #312).
+  WireMock + Testcontainers patterns aligned with Agentic Loop repos.
+globs: **/*IT.java,**/*IntegrationTest.java
+alwaysApply: false
+---
+
+# Spring Boot integration testing (external cherry-pick)
+
+Source: [jabrena/cursor-rules-java](https://github.com/jabrena/cursor-rules-java) rule 312 — adapted for your monorepo (Gradle, not Maven).
+
+## Integration test placement
+
+- Suffix: `*IT` or `*IntegrationTest` under `src/test/java`.
+- Run with `./gradlew integrationTest` when separated; else included in `test` task per repo.
+
+## External dependencies
+
+- **HTTP downstream:** WireMock (`@AutoConfigureWireMock` or programmatic stub).
+- **Azure / DB:** prefer testcontainers or in-memory fakes already in repo; do not add new infra without wiki decision.
+- **Time:** inject `Clock` or use fixed `Instant` — no `Thread.sleep` in tests.
+
+## Agentic Loop alignment
+
+- Follow existing repo patterns (`my-service-aggregator`, `cdp-your-service-api-java`).
+- Integration tests prove **wiring + contract**, not every branch (unit tests cover branches).
+- JaCoCo measured packages still apply — integration tests count toward line ratio.
+
+## Conflicts
+
+Agentic Loop [`java-springboot-standards.mdc`](../java-springboot-standards.mdc) and [`service-quality-drill.mdc`](../service-quality-drill.mdc) take precedence.
