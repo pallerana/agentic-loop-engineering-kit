@@ -1,0 +1,30 @@
+---
+description: >-
+  Cherry-picked Spring Boot slice testing patterns (jabrena/cursor-rules-java #311).
+  Complements java-springboot-standards.mdc — does not override Agentic Loop layering rules.
+globs: **/*Test.java,**/*IT.java
+alwaysApply: false
+---
+
+# Spring Boot slice testing (external cherry-pick)
+
+Source: [jabrena/cursor-rules-java](https://github.com/jabrena/cursor-rules-java) rule 311 — adapted for your monorepo.
+
+## Prefer slice tests over full context
+
+| Layer | Annotation | Use when |
+|-------|------------|----------|
+| Web layer | `@WebMvcTest(controllers = X.class)` | HTTP contract, status codes, JSON shape |
+| JPA slice | `@DataJpaTest` | Repository queries (if JPA present) |
+| JSON | `@JsonTest` | Serializer/deserializer edge cases |
+
+## Rules
+
+- Mock only **direct** collaborators with `@MockitoBean` (Spring Boot 3.4+) or `@MockBean`.
+- Do **not** load full `@SpringBootTest` for controller-only changes.
+- Use `@Import` for security/`GlobalExceptionHandler` when needed.
+- Assert HTTP + JSON body; avoid asserting internal service call order unless behavior-critical.
+
+## Conflicts
+
+If this file conflicts with [`java-springboot-standards.mdc`](../java-springboot-standards.mdc) or ArchUnit tests, **Agentic Loop standards win**.

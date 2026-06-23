@@ -1,0 +1,425 @@
+---
+description: PR code review — gather PR/Jira context, then ce-code-review + Bugbot + standards/ArchUnit/SOLID/scenarios; humanized tabular comments (first person, we)
+globs: your-service-*/**
+alwaysApply: false
+---
+
+# Agentic Loop PR Code Review (`your-service-*`)
+
+On-demand workflow for reviewing pull requests. Complements [service-quality-drill.mdc](./service-quality-drill.mdc) (build/JaCoCo/CI/fix) — this rule owns **context → review → humanized comment tables**.
+
+Also apply [java-springboot-standards.mdc](./java-springboot-standards.mdc) for all Java/Spring Boot patterns.
+
+**Invoke:** `@pr-code-review` + PR URL/number, or "review this PR using our code review rule".
+
+**Default mode:** report-only — do not auto-apply fixes or commit unless the user explicitly asks.
+
+## Workflow overview
+
+```
+Phase 0 (PR + Jira + type + feedback registry) → Pass 1 → Pass 2 → Pass 3 (routed by pr_type) → synthesize → net-new table
+```
+
+---
+
+## Phase 0 — Functional context (mandatory first)
+
+**Do not start ce-code-review or Bugbot until Phase 0 is complete.**
+
+### 0a. PR metadata and discussion
+
+```bash
+gh pr view <n-or-url> --json title,body,baseRefName,headRefName,url,comments,reviews
+gh pr view <n-or-url> --comments   # when thread detail is needed
+```
+
+Write a **Functional Context** block (3–8 bullets):
+
+- **Intent** — what the PR claims to deliver.
+- **Acceptance signals** — must/should language, checklists in description.
+- **Review thread themes** — unresolved or recently resolved comments defining expected behavior.
+- **Out of scope** — explicit deferrals.
+
+If no PR exists, use commit messages + linked docs; note `context_source: branch-only`.
+
+### 0b. Jira ticket discovery and fetch
+
+Scan PR title, body, commits, and review comments for keys: `[A-Z][A-Z0-9]+-\d+` (e.g. `PROJ-123`).
+
+For each unique key:
+
+1. Fetch via **Atlassian MCP** `getJiraIssue` (preferred).
+2. Fallback: Glean search or compiled [jira-backlog.md](../docs/wiki/jira-backlog.md) if MCP unavailable — note `jira_context: partial|unavailable` in header.
+
+Capture: summary, status, type, description/AC, parent epic, edge cases/NFRs.
+
+Append **Jira scope** (key → requirement) and **requirements trace** (files/methods → AC). If fetch fails, add P2 row for missing context and continue.
+
+### 0c. Scenario matrix (pre-review sketch)
+
+| Scenario type | Verify in code/tests |
+|---------------|----------------------|
+| **Positive** | Primary flows from PR/Jira |
+| **Negative** | Invalid input, auth denied, dependency down, not-found |
+| **Edge** | null/blank, empty collections, timeouts, concurrency, idempotency, stale cache |
+| **Runtime tier** | For workflow/test PRs: estimate wall time from scripts; flag suites likely **>10 min** as nightly/scheduled candidates, not per-push blockers |
+
+### 0d. Existing PR thread ingestion (mandatory when PR exists)
+
+Fetch inline review comments and map them to the diff before Pass 1:
+
+```bash
+gh api "repos/{owner}/{repo}/pulls/{n}/comments?per_page=100" \
+  --jq '.[] | {id, user: .user.login, path, line, body, in_reply_to_id}'
+```
+
+For each thread:
+
+- Summarize **unresolved** themes and **recently resolved** behavior the author committed to.
+- **Elevate manager/staff feedback** to **P1 Requirements** when it conflicts with an added hunk — cite the thread id (e.g. `r3423687036`) in **Sources**.
+- Map each thread to a **`+` line** in the diff (`git diff -U0 base...head -- <file>`). Skip threads anchored on unchanged context lines unless the thread still applies to nearby added code.
+- Include **Review thread themes** in the Functional Context block (0a) with author replies and open disagreements.
+
+Pass Functional Context + scenario checklist + PR thread themes to ce-code-review intent and Bugbot `Custom Instructions`.
+
+### 0e. PR-type classification (mandatory when PR exists)
+
+Classify before Pass 1 from changed file paths:
+
+```bash
+gh pr diff <n-or-url> --name-only
+# or: git diff --name-only origin/<base>...HEAD
+```
+
+| `pr_type` | Diff signals |
+|-----------|----------------|
+| **java-only** | Only `your-service-*/**`, `*.java`, `build.gradle.kts`, `src/**` under your-service repos |
+| **infra-only** | Only `infra//**`, `DDog_1000896_iac_live/**`, `*.tf`, `deployment.y*ml`, `.github/workflows/**` — **no** Java paths |
+| **mixed** | Both Java and infra path sets |
+
+Record in Functional Context header: `pr_type: java-only | infra-only | mixed`.
+
+**Route Pass 3 and quality drill by `pr_type`:**
+
+| `pr_type` | Pass 3 | Quality drill |
+|-----------|--------|---------------|
+| java-only | §3a–3d (below) + [java-springboot-standards.mdc](./java-springboot-standards.mdc) + ArchUnit | [service-quality-drill.mdc](./service-quality-drill.mdc): gradle, JaCoCo, CI |
+| infra-only | §3e infra (below); **skip** §3a–3d ArchUnit | No JaCoCo/gradle; `terraform fmt`/`validate` if `.tf`; **no** `terraform apply` |
+| mixed | §3a–3d on Java `+` hunks only; §3e on infra `+` hunks; **Cross-cutting** rows when TF + Java consumer linked | Per-segment gates |
+
+**Mixed PR rules:** Java findings cite `+` lines under `your-service-*`; infra findings cite `+` under `infra/` / DDog / workflows. Do not apply Java layering to `.tf` or workflow YAML.
+
+### 0f. Existing-feedback registry (mandatory when PR exists)
+
+Run after Phase 0d. Build a dedup registry so synthesis does not repeat open threads.
+
+```bash
+# Inline review comments (humans + bots on diff lines) — may overlap 0d
+gh api "repos/{owner}/{repo}/pulls/{n}/comments?per_page=100"
+
+# PR conversation comments
+gh api "repos/{owner}/{repo}/issues/{n}/comments?per_page=100"
+
+# Review summaries (APPROVE / REQUEST_CHANGES)
+gh pr view <n-or-url> --json reviews
+```
+
+**Registry row:** `(path, line ±3, author, thread_id, theme_summary, resolved, bot)`
+
+Tag bot authors: `github-copilot[bot]`, `copilot-pull-request-reviewer[bot]`, `github-codequality[bot]`, `advanced-security[bot]`, `copilot-swe-agent[bot]`.
+
+Include in Functional Context:
+
+```markdown
+## Existing feedback registry (Phase 0f)
+- Open threads: N | Resolved: M | Bots: B
+- Themes already raised: [path:line — author — theme_summary]
+```
+
+Pass registry to ce-code-review Stage 2 and Bugbot: **"Do not re-raise themes in Existing feedback registry unless diff changed since that comment."**
+
+---
+
+## Pass 1 — ce-code-review
+
+- Run **`ce-code-review`** skill (full multi-agent pipeline — not quick-review short-circuit).
+- Scope: PR URL/number; else current branch vs `main` (`base:origin/main`).
+- Inject Phase 0 intent (PR + Jira + scenarios + PR threads + **0f registry** + **`pr_type`**) into ce-code-review Stage 2.
+- **Skip Stage 5c auto-apply** unless user asked to fix.
+- Capture: verdict, P0–P3, persona, file, line, suggested fix, testing gaps.
+
+### Diff-only scoping (mandatory for PR reviews)
+
+Findings must cite **only added lines** from the PR diff:
+
+```bash
+git fetch origin pull/{n}/head:refs/review/pr-{n}-head   # when reviewing a PR
+git diff -U0 main...refs/review/pr-{n}-head -- <file>    # verify each Location
+```
+
+- **Location** column: file path + line number that appears on a **`+` hunk** in `-U0` diff output.
+- Pre-existing code (unchanged lines, pre-existing workflow steps) → **requirements trace**, **pre-existing gaps**, or **Review thread themes** — not new findings.
+- If a colleague comment targets pre-existing code, note it under Functional Context or a separate **Pre-existing gaps** section; do not assign a diff Location unless the PR also adds/changes that line.
+
+---
+
+## Pass 2 — Bugbot
+
+Follow [review-bugbot](file:///Users/VZDX90/.cursor/skills-cursor/review-bugbot/SKILL.md):
+
+- One `bugbot` subagent, `readonly: true`, `subagent_type: "bugbot"`.
+- Prompt: `Full Repository Path`, `Diff: branch changes`.
+- **`Custom Instructions`:** Phase 0 Functional Context + scenario checklist + **Existing feedback registry (0f)**.
+- For a specific PR: checkout PR head branch first (stash only with user consent if blocked).
+
+---
+
+## Pass 3 — Standards (routed by `pr_type` from Phase 0e)
+
+### When `pr_type` is java-only or mixed (Java `+` hunks)
+
+Read [java-springboot-standards.mdc](./java-springboot-standards.mdc) in full for Java segments.
+
+### 3a. Standards checklist (Java)
+
+- Thin controllers; no Azure/external SDK in controllers.
+- Apache Commons null/blank/empty; Bean Validation on DTOs; i18n via `Translator` + `ErrorMessageConstants`.
+- `GlobalExceptionHandler` + `ApiErrorResponseDTO`; no leaked exception messages.
+- Records/MapStruct; no multi-arg record constructors in services.
+- Spring Boot 4: `@ExtendWith(MockitoExtension.class)`, `@MockitoBean`, AssertJ not JUnit assertions.
+- your service: `*CacheService`, `SseEmitterRegistry`, `PeerProbeFactory`.
+- All §15 "Do NOT" table items → category **`Standards`**.
+
+### 3b. SOLID and design principles
+
+| Principle | Look for | Category |
+|-----------|----------|----------|
+| **S** | God classes, business logic in controllers | `Design` |
+| **O** | Switch-on-string; hard-coded lists vs enums/factories | `Design` |
+| **L** | Interface impls throwing `UnsupportedOperationException` on core paths | `Design` |
+| **I** | Fat interfaces affecting the diff | `Design` |
+| **D** | Concrete injection where interface exists; `new` for external clients | `Design` |
+
+Also: program to interfaces, constructor injection, stateless beans, probe factory not stub beans.
+
+### 3c. ArchUnit architecture (packages, classes, layering)
+
+**Read** `src/test/java/**/architecture/ArchitectureRulesTest.java` in the target repo first.
+
+Present in your service aggregator and central. If absent in another `your-service-*` repo, apply the four canonical rules below and note `archunit_test: absent`.
+
+| ArchUnit test method | Constraint | Review question |
+|----------------------|------------|-----------------|
+| `controllersMustNotDependOnExternalCloudSdks` | `..controllers..` must not depend on `com.azure..` | Azure SDK in controller? |
+| `mainCodeMustNotUseMutableStaticFields` | Static fields must be `final` | Mutable static / `@Autowired static`? |
+| `testsMustUseAssertJNotJUnitAssertions` | No `org.junit.jupiter.api.Assertions` | `assertEquals` instead of `assertThat`? |
+| `productionBeansMustNotDeclareMutableCollectionFields` | No `Map`/`List`/`Set`/`Queue`/`Cache` on production `@Service`/`@Repository`/orchestration/probe unless `@Profile` | In-memory cache on production bean? |
+
+**Agentic Loop package placement** — flag misplaced types as **`Architecture`**:
+
+| Package | Belongs here | Must NOT contain |
+|---------|--------------|------------------|
+| `controllers` | HTTP mapping, `@Valid`, OpenAPI | Business logic, SDK, persistence |
+| `services` + `services.impl` | Business logic; `I*Service` | HTTP, direct response building |
+| `orchestration` | Multi-step workflows | Low-level SDK when client exists |
+| `repository` | Persistence adapters | REST or orchestration |
+| `configuration` | Beans, `@ConfigurationProperties` | Domain rules |
+| `dto` / `enum` / `constants` | Types only | Behavioral logic |
+| `handlers` | Exception handler, filters | Business rules |
+| `probe` | Probe impls via factory | Stub beans that throw |
+
+**Interface naming:** `IFooService` + impl under `services.impl`.
+
+**Optional local verify** on PR branch:
+
+```bash
+./gradlew test --tests '*ArchitectureRulesTest'
+```
+
+Failures → **P1 Architecture** with ArchUnit message in Comment. Source: **`archunit`**.
+
+### 3d. Scenario coverage vs Phase 0 checklist
+
+For each scenario: **Covered** (code + test), **Partial** (code only or incomplete test), **Missing** (no handler/test).
+
+- Jira-required gap → **P1**; implied edge → **P2**.
+- Categories: **`Testing`**, **`Correctness`**, **`Requirements`**.
+
+### 3e. Infra standards (when `pr_type` is infra-only or mixed)
+
+Read [terraform-standards.mdc](./terraform-standards.mdc) and [observability-ddog.md](../docs/wiki/observability-ddog.md) when DDog paths touched.
+
+| Check | Category |
+|-------|----------|
+| No secrets in `.tf`; Key Vault / variable refs | **Security** |
+| DR pattern when `secondary_region` set | **Infra** |
+| Module reuse vs inline resources in `infra/` | **Infra** |
+| DDog monitor updates when observability surface changes | **Infra** |
+| Workflow ordering / `continue-on-error` / CD placement | **Requirements** |
+| TF resource ↔ Java consumer (knowledge-graph path) | **Cross-cutting** |
+
+**Skip** ArchUnit, JaCoCo, and Java §3a–3d for infra-only `+` hunks.
+
+---
+
+## Synthesis
+
+1. Deduplicate by `file + line (±3) + theme` across Pass 1 + Pass 2 + Pass 3 — keep highest severity; merge **Sources**.
+2. Requirements-first — Jira/PR gaps before style P3s.
+3. Drop linter-only nits and protected-artifact cleanup (per ce-code-review).
+4. Verify line numbers against reviewed tree **and** against `git diff -U0` `+` hunks (drop rows that cite unchanged lines).
+5. Reconcile findings with Phase 0d PR threads — manager/staff P1 Requirements take precedence over style nits when they conflict with added hunks.
+6. **Verdict:** block on P0/P1; note unmet Jira AC.
+7. **Registry suppress** — drop candidate finding if `(path, line ±3, theme)` matches an **open** Phase 0f registry row (any author).
+8. **Registry acknowledge** — if theme matches a **resolved** thread and code still violates → emit with `Sources: PR thread (resolved-but-regressed)` + thread id.
+9. **Net-new only table** — primary findings table lists **net-new** items only; optional appendix **Already raised (skipped)** with `thread_id` / author for suppressed rows.
+10. **Manager precedence** — open manager/staff P1 on hunk → suppress duplicate P2/P3 on same theme; escalate if PR regresses a resolved fix.
+
+Report in header: `net_new_count: N` | `suppressed_count: M`.
+
+**Suppress vs emit:**
+
+- **Suppress** — same line/theme, open thread, no material diff change since comment
+- **Appendix only** — partial overlap — "extends thread r…"
+- **Emit** — new `+` hunk with no thread; new theme; resolved-but-regressed
+
+### Persona → category mapping
+
+| ce-code-review persona | Category |
+|------------------------|----------|
+| security | Security |
+| correctness, adversarial | Correctness |
+| reliability | Reliability |
+| maintainability | Maintainability |
+| testing | Testing |
+| api-contract | API contract |
+| performance | Performance |
+| project-standards | Standards |
+| ArchUnit / package layer | Architecture |
+| SOLID / design | Design |
+| Jira / PR AC gap | Requirements |
+| Infra / Terraform / workflow | Infra |
+| TF + Java consumer link | Cross-cutting |
+
+---
+
+## Required output format
+
+### Header (before tables)
+
+1. **Functional Context** — PR intent + Jira keys + **`pr_type`** (bullets).
+2. **Existing feedback registry (0f)** — open/resolved/bot counts + themes raised.
+3. **Scenario coverage summary** — covered / partial / missing counts.
+4. **Review scope** — PR URL, branch vs base, tools run, `net_new_count` / `suppressed_count`.
+5. **Artifact path** — ce-code-review run dir when available.
+
+### Primary findings table (mandatory — net-new only)
+
+| # | Severity | Category | Location | Method | Comment | Sources |
+
+**Categories:** `Security`, `Correctness`, `Reliability`, `Maintainability`, `Testing`, `API contract`, `Performance`, `Standards`, `Architecture`, `Design`, `Requirements`, `Infra`, `Cross-cutting`
+
+- **Severity:** `P0 Critical` | `P1 High` | `P2 Moderate` | `P3 Low`
+- **Location:** `` `path/to/File.java:142` `` — must be a **`+` line** in `git diff -U0 base...head` (not pre-existing context)
+- **Method:** enclosing method (e.g. `save()`, `healthz()`) or `*(class)*`
+- **Comment:** open with generic context (see Voice and tone); collaborative "we" fixes; follow **Comment cohesion pattern** and **Canonical inline comment**; cross-diff references need clickable `path#Lnn` + method/step name (see Pre-existing code references)
+- **Sources:** `ce-code-review`, `Bugbot`, `standards`, `archunit`, `design`, `jira-context`
+
+### Optional: scenario coverage table
+
+When Phase 0c checklist is non-empty:
+
+| Scenario | Type | Status | Evidence | Gap / suggestion |
+
+Types: `Positive`, `Negative`, `Edge`. Status: `Covered`, `Partial`, `Missing`.
+
+### Optional: Already raised (skipped) appendix
+
+When Phase 0f registry suppresses findings:
+
+| thread_id | Author | Location | Theme | Reason skipped |
+|-----------|--------|----------|-------|----------------|
+
+### Voice and tone (mandatory)
+
+- **Open simply:** start with plain context — "The new functional tests…", "This step runs…", "Combined with…" — not a template "I noticed…" on every comment.
+- **First person (optional):** use mid-comment when natural — "I see…", "I'm concerned…" — reserve "I noticed…" for non-obvious findings only.
+- **Collaborative fixes with "we":** "Can we…", "We could…", "Let's…" — never "you should"
+- **Concrete:** explain impact, then propose fix.
+- **Jira-aware:** "For PROJ-123 acceptance criteria…" when ticket context exists.
+- **No robotic phrasing:** avoid "It is recommended that" / "The developer must".
+
+#### Comment cohesion pattern
+
+Use this six-step flow for inline GitHub comments and table **Comment** cells:
+
+1. **Open with context** — state the situation in generic terms, anchored to the diff (what runs where, relative to other steps). Do not default to "I noticed…" as the first words.
+2. **Impact** — concrete failure mode (e.g. cold-rollout flakes, false negatives).
+3. **Compound concern** — weave a second issue naturally (e.g. `continue-on-error` + weak signal).
+4. **Requirements tie-in** — link to Jira AC with plain-language paraphrase, not ticket jargon alone.
+5. **Collaborative fix** — "Can we…" with **two viable options** when reasonable (move step vs add retries).
+6. **Close with intent preserved** — "That way we still get…" so the comment reads constructive, not blocking for its own sake.
+
+**Anti-patterns to avoid:**
+
+- Opening every comment with "I noticed…" (robotic template voice)
+- Chained colons and bare line refs (`:620`) without context
+- "weak observability as per AC4" without explaining what AC4 means
+- Single run-on sentence mixing ordering, `continue-on-error`, and Jira
+- Vague cross-diff labels ("pre-existing CD smoke step") with no file, line, step id, or clickable link
+
+#### Pre-existing code references (cross-diff)
+
+When a comment compares **new** code (a `+` hunk) to **unchanged** logic on the base branch, cite the pre-existing side so the author can navigate:
+
+| Element | Rule |
+|---------|------|
+| **Step / method name** | Name the symbol or workflow step (e.g. `router_smoke`, `Validate router endpoint returns 200`, `load_router_test_config_from_overlay()`) |
+| **File + line** | Exact location on `main`/base branch |
+| **Clickable link** | GitHub markdown link in inline PR comments |
+
+**Link formats** (inline PR comment — preferred):
+
+```markdown
+[router_smoke (`.github/workflows/cd-pipeline.yml` L614–645)](https://github.com/{owner}/{repo}/blob/main/.github/workflows/cd-pipeline.yml#L614-L645)
+```
+
+**Shorthand** (findings table or when repo URL is obvious from PR context):
+
+```markdown
+`.github/workflows/cd-pipeline.yml` L614 (`router_smoke` — reads `CELL_ASSIGNMENT_HOST` from `envoy-lua-patch.yaml`)
+```
+
+Build URLs from PR metadata: `https://github.com/{owner}/{repo}/blob/{baseRef}/{path}#L{start}-L{end}`.
+
+#### Canonical inline comment (reference)
+
+Multi-paragraph GitHub comment — copy-ready template for workflow/CI findings. Use markdown links for Jira and for pre-existing steps; table **Comment** cells may use shorthand `path#Lnn`.
+
+> This new functional test step runs **before** the existing [Envoy health check (`.github/workflows/cd-pipeline.yml` L572–583)](https://github.com/<org>/your-service-api/blob/main/.github/workflows/cd-pipeline.yml#L572-L583) and [router_smoke (L614–645)](https://github.com/<org>/your-service-api/blob/main/.github/workflows/cd-pipeline.yml#L614-L645), right after pod readiness. On a cold rollout, the router path may not be fully stable yet, so we could get false negatives even when the deploy is fine.
+>
+> Combined with `continue-on-error: true` here, those flakes would show up in the Step Summary but **won't fail the deploy** — which makes the non-prod signal pretty weak for [PROJ-123 AC4](https://gm-sdv.atlassian.net/browse/PROJ-123) (observable validation before prod promotion).
+>
+> Can we either **move this block after** the Envoy health + endpoint checks, or **add retries** in `run_functional_test_ci.sh` (e.g. backoff until readiness passes, then run the VIN suite)? That way we still get E2E coverage without logging noise that's easy to ignore.
+
+### Example rows
+
+| # | Severity | Category | Location | Method | Comment | Sources |
+|---|----------|----------|----------|--------|---------|---------|
+| 1 | P1 High | Reliability | `CellPersistenceFacade.java:142` | `save()` | The `save()` path calls the async SDK and `.block()` without catching `CosmosException`. Failures (404, 412, 429, etc.) can bypass `CellPersistenceFacade.translate()` and surface as raw 500s instead of our mapped `StandardizedResponse` statuses. Can we wrap the upsert in try/catch and rethrow as `CosmosAccessException`? | ce-code-review, Bugbot |
+| 2 | P1 High | Requirements | `CellHealthController.java:88` | `healthz()` | PROJ-123 calls for returning 503 when any critical dependency is DOWN. I see we map DEGRADED to 200 here — can we align the HTTP status with the ticket AC and add a `@WebMvcTest` for the DOWN case? | jira-context, standards |
+| 3 | P1 High | Architecture | `CosmosCellSnapshotRepository.java:24` | *(class)* | This repository type is pulled into controller-layer wiring while also owning Cosmos client calls. Can we keep Cosmos SDK usage in `repository` only and inject `ICellSnapshotRepository` into the service layer so we stay aligned with our ArchUnit controller rule and package layering? | archunit, standards |
+| 4 | P1 High | Requirements | `cd-pipeline.yml:616` | *(workflow step)* | This new functional test step runs before the existing Envoy health check and router_smoke steps, right after pod readiness — on a cold rollout we could get false negatives even when the deploy is fine. Combined with `continue-on-error: true` here, those flakes would show in the Step Summary but won't fail the deploy, which makes the non-prod signal pretty weak for PROJ-123 AC4 (observable validation before prod promotion). Can we either move this block after the Envoy health + endpoint checks, or add retries in `run_functional_test_ci.sh` so we still get E2E coverage without logging noise that's easy to ignore? | jira-context, PR thread |
+| 5 | P2 Moderate | Requirements | `scripts/router-testing/lib.sh:171` | `load_router_test_config_from_overlay()` | The new functional and perf tests resolve the router host from `cells.yaml` via `load_router_test_config_from_overlay()` (L182), while the pre-existing [router_smoke step (`.github/workflows/cd-pipeline.yml` L614–645)](https://github.com/<org>/your-service-api/blob/main/.github/workflows/cd-pipeline.yml#L614-L645) still reads `CELL_ASSIGNMENT_HOST` from `envoy-lua-patch.yaml`. With both wired in the same pipeline at `cd-pipeline.yml:616`, operators could compare results from two host sources and draw the wrong conclusion. For PROJ-123, can we document in the new README that functional/perf host resolution comes from `cells.yaml`, not `envoy-lua-patch.yaml`, so we don't misread mixed signals during non-prod validation? | jira-context |
+
+### Verdict (one line after tables)
+
+**Ready to merge** / **Ready with fixes** / **Not ready** — P0/P1 count + any unmet Jira acceptance criteria.
+
+---
+
+## Out of scope
+
+- Modifying ce-code-review or Bugbot skills
+- Auto-posting comments to GitHub (user copies table or asks separately)
+- Committing or pushing fixes unless user asks

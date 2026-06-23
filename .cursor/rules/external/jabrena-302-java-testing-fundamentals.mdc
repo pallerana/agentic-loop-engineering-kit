@@ -1,0 +1,33 @@
+---
+description: >-
+  Cherry-picked Java testing fundamentals (jabrena/cursor-rules-java #302).
+  Naming and structure for unit tests in Agentic Loop services.
+globs: **/*Test.java
+alwaysApply: false
+---
+
+# Java testing fundamentals (external cherry-pick)
+
+Source: [jabrena/cursor-rules-java](https://github.com/jabrena/cursor-rules-java) rule 302 — adapted for your monorepo.
+
+## Naming
+
+- `methodUnderTest_stateUnderTest_expectedBehavior`
+- Example: `getCellHealth_whenCellMissing_returns404`
+
+## Structure
+
+- Arrange / Act / Assert — blank line between sections.
+- One logical behavior per test method.
+- Use `@ParameterizedTest` for input variants (null, empty, boundary).
+
+## Assertions
+
+- Prefer AssertJ (`assertThat`) over JUnit legacy asserts.
+- Assert exceptions with `assertThatThrownBy` or `assertThrows`.
+- No test logic in production code (`if (isTest)` forbidden).
+
+## CDP
+
+- Every Copilot/CodeQL fix cites a **named test** in the PR thread reply.
+- Test matrix IDs (Phase 1) should map to test method names in close-the-loop Jira comment.

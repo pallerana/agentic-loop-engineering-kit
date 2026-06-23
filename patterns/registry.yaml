@@ -1,0 +1,31 @@
+# Loop pattern registry (machine-readable)
+
+patterns:
+  - id: agentic-loop
+    description: Agentic Loop Engineering Kit for Java/Spring Boot services
+    entry_command: /agentic-loop
+    loop_md: loop-kit/LOOP.md
+    profiles_dir: loop-kit/profiles/
+    state_global: loop-kit/STATE.md
+    gates: loop-kit/GATES.md
+    budget: loop-kit/loop-budget.md
+    run_log: loop-kit/loop-run-log.md
+    safety: docs/safety.md
+
+  - id: ops-incident
+    description: Datadog / PagerDuty investigation
+    profile: ops-incident
+    skill: .cursor/skills/ops-incident-loop/SKILL.md
+    state: loop-kit/ops-incident-state.md
+    default_mode: L1
+
+  - id: springboot-default
+    description: Generic Java/Spring Boot repo (Gradle)
+    profile: springboot-default
+    repos: []
+
+skills:
+  triage: .cursor/skills/loop-triage/SKILL.md
+  verifier: .cursor/skills/loop-verifier/SKILL.md
+  budget: .cursor/skills/loop-budget/SKILL.md
+  orchestrator: .cursor/skills/agentic-loop/SKILL.md

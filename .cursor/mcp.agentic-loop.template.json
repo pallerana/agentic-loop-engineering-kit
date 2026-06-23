@@ -1,0 +1,20 @@
+{
+  "_comment": "Agentic Loop Engineering Kit MCP template — merge into .cursor/mcp.json; enable servers you have credentials for",
+  "mcpServers": {
+    "atlassian": {
+      "comment": "Jira + Confluence (Rovo MCP or official Atlassian MCP)"
+    },
+    "github": {
+      "comment": "PR, checks, code search — user-github or plugin-github"
+    },
+    "glean": {
+      "comment": "Enterprise search, codebase-context"
+    },
+    "datadog": {
+      "comment": "ops-incident profile — logs, metrics, monitors"
+    },
+    "pagerduty": {
+      "comment": "ops-incident profile — incidents, services, notes"
+    }
+  }
+}

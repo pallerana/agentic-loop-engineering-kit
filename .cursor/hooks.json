@@ -1,0 +1,1 @@
+{"version":1,"hooks":{"sessionEnd":[{"command":".cursor/hooks/append-run-log.sh"}],"beforeShellExecution":[{"command":".cursor/hooks/block-dangerous-git.sh"}],"beforeFileEdit":[{"command":".cursor/hooks/block-denylist-edits.sh"}]}}

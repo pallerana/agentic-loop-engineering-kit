@@ -1,0 +1,25 @@
+id: ops-incident
+extends: none
+description: Datadog / PagerDuty ops troubleshooting
+context_skill: ops-incident-loop
+context_sources:
+  - datadog_mcp
+  - pagerduty_mcp
+  - knowledge-graph
+  - wiki:ops-and-oncall.md
+  - wiki:observability-ddog.md
+  - glean:codebase-context
+default_mode: L1
+phases_enabled: [0, 1, 2]
+phases_l2: [0, 0b, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+handoff_profile: my-service
+ship: none
+human_gates: always
+mcp:
+  - datadog
+  - pagerduty
+  - glean
+  - github
+
+rules:
+  - terraform-standards.mdc
