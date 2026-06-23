@@ -10,7 +10,7 @@ YAML profiles drive the Agentic Loop Engineering Kit without changing the orches
 | `my-service.yaml` | Aggregator + central; JaCoCo 1.00 |
 | `ops-incident.yaml` | Datadog / PagerDuty L1 investigate |
 | `your-service.yaml` | Assignments API |
-| `your-service.yaml` | HTTP cell router |
+| `your-service.yaml` | HTTP API gateway |
 | `your-service.yaml` | Cell migrator |
 | `your-service.yaml` | Cell discovery |
 

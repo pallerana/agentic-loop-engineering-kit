@@ -71,4 +71,4 @@ Continues feature phases 0–9 on target profile.
 ## Query templates (PagerDuty)
 
 - Incident notes: root cause candidates, linked deploys
-- Service dependencies: upstream/downstream cell services
+- Service dependencies: upstream/downstream peer services

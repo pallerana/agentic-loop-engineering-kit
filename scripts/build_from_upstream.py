@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Re-import from a Cell Platform-style source tree (read-only). For maintainers only."""
+"""Re-import from an upstream monorepo (read-only). For maintainers only."""
 from __future__ import annotations
 
 import re
@@ -7,7 +7,7 @@ import shutil
 import sys
 from pathlib import Path
 
-SRC = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("/path/to/cell-platform")
+SRC = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("/path/to/upstream-monorepo")
 DST = Path(__file__).resolve().parents[1]
 
 REPLACEMENTS = [

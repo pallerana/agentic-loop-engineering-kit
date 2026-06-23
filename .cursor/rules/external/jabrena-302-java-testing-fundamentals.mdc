@@ -13,7 +13,7 @@ Source: [jabrena/cursor-rules-java](https://github.com/jabrena/cursor-rules-java
 ## Naming
 
 - `methodUnderTest_stateUnderTest_expectedBehavior`
-- Example: `getCellHealth_whenCellMissing_returns404`
+- Example: `getOrder_whenNotFound_returns404`
 
 ## Structure
 

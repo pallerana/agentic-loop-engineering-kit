@@ -46,7 +46,7 @@ Actively use Java 25 constructs instead of verbose equivalents:
 - **Records** for all immutable value types, DTOs, config holders, internal results:
   ```java
   public record ErrorDetail(String field, String message) { }
-  public record CellHealthSummary(String cellId, String status, Instant checkedAt) { }
+  public record AppHealthSummary(String resourceId, String status, Instant checkedAt) { }
   ```
 - **Sealed classes** for closed domain hierarchies (e.g. health check result variants):
   ```java
@@ -70,8 +70,8 @@ Actively use Java 25 constructs instead of verbose equivalents:
 - **Text blocks** for multi-line strings (JSON templates, SQL, YAML snippets):
   ```java
   String body = """
-      {"cellId": "%s", "status": "DOWN"}
-      """.formatted(cellId);
+      {"resourceId": "%s", "status": "DOWN"}
+      """.formatted(resourceId);
   ```
 - **`var`** for local variables where the type is obvious from the right-hand side. Do not use `var` for fields or where it obscures the type.
 - **Virtual threads** — Spring Boot 4 enables virtual threads by default (`spring.threads.virtual.enabled=true`). Do NOT create raw `Thread` objects or tune thread-pool sizes for I/O-bound work; let the container manage concurrency.
@@ -95,18 +95,18 @@ public interface FooMapper {
 
 // GOOD - MapStruct variant (no multi-arg record constructors in services)
 @Mapping(target = "status", expression = "java(stale ? HealthStatus.STALE : snapshot.status())")
-CellSnapshotDTO withComputedStaleness(CellSnapshotDTO snapshot, String staleness, boolean stale);
+ResourceSnapshotDTO withComputedStaleness(ResourceSnapshotDTO snapshot, String staleness, boolean stale);
 
 // BAD - service-layer 10+ arg record constructor
-return new CellSnapshotDTO(snapshot.cellId(), snapshot.environment(), ...);
+return new ResourceSnapshotDTO(snapshot.resourceId(), snapshot.environment(), ...);
 ```
 
 Additional rules (your service PR review learnings):
 - **No multi-arg record constructors in services** — use MapStruct `@Mapping` variant methods.
 - **Records do not need `@Builder`** when MapStruct owns construction.
 - **No inline FQCN** in mapper interfaces — import types normally.
-- **Component health rows:** `CellComponentStatusDTO` + `CellComponent` enum (`@JsonValue wireName()`), not `SubsystemStatusDTO` + string literals.
-- **Injected mapper fields** must be descriptive: `cellHealthEventMapper`, not `mapper`.
+- **Component health rows:** `ServiceComponentStatusDTO` + `ServiceComponent` enum (`@JsonValue wireName()`), not `SubsystemStatusDTO` + string literals.
+- **Injected mapper fields** must be descriptive: `appHealthEventMapper`, not `mapper`.
 
 ## 4. Apache Commons — mandatory for null/empty/blank checks
 
@@ -252,11 +252,11 @@ goals (see Agentic Loop assignments `findAltId` / `requireAltId` pattern).
 ```java
 // GOOD — cached lookup + service-layer throw (controller stays thin)
 @Cacheable(value = "altIds", key = "#entityType + '-' + #id")
-public Optional<AltId> findAltId(String id, CellEntityType entityType) {
+public Optional<AltId> findAltId(String id, EntityType entityType) {
     return altIdRepository.findById(id, partitionKey(id, entityType));
 }
 
-public AltId requireAltId(String id, CellEntityType entityType) {
+public AltId requireAltId(String id, EntityType entityType) {
     return findAltId(id, entityType)
             .orElseThrow(() -> new EntityNotFoundException(entityType, AltId.class));
 }
@@ -272,7 +272,7 @@ return ResponseEntity.ok(altIdService.findAltId(id, entityType)
 
 // BAD — throw inside @Cacheable (misses not negative-cached)
 @Cacheable(value = "altIds", key = "#entityType + '-' + #id")
-public AltId readAltIdByIdAndEntityType(String id, CellEntityType entityType, Class<?> type) {
+public AltId readAltIdByIdAndEntityType(String id, EntityType entityType, Class<?> type) {
     return altIdRepository.findById(id, partitionKey(id, entityType))
             .orElseThrow(() -> new EntityNotFoundException(entityType, type));
 }
@@ -293,7 +293,7 @@ service layer; `GlobalExceptionHandler` maps them to HTTP status and `ApiErrorRe
 - All string literals that appear more than once MUST be in a constants class.
 - Use enums for fixed value sets (status, prefixes).
 - **`ApiConstants` must cover every path segment**, including nested routes (`EVENTS = "/events"`, `EVENT_STREAM = "/stream"`). Compose controller mappings from constants only.
-- **Domain enums** for fixed component/status sets (`CellComponent`, `HealthStatus`); probe and event payloads reference enums, not free-form strings.
+- **Domain enums** for fixed component/status sets (`ServiceComponent`, `HealthStatus`); probe and event payloads reference enums, not free-form strings.
 
 ```java
 public final class CommonConstants {
@@ -363,7 +363,7 @@ public record HealthConfig(int aggregatorTimeoutMs, String centralBaseUrl) { }
 public void publishHeartbeat() { ... }
 
 public record PublisherProperties(
-    @DefaultValue(CellHealthConstants.DEFAULT_HEARTBEAT_INTERVAL_MS) int heartbeatIntervalMs) {}
+    @DefaultValue(AppConstants.DEFAULT_HEARTBEAT_INTERVAL_MS) int heartbeatIntervalMs) {}
 ```
 
 Additional rules:
@@ -374,8 +374,8 @@ Additional rules:
 ### Caching (your service / Agentic Loop pattern)
 - Enable Spring Cache once per app: `@EnableCaching` on the `@SpringBootApplication` class.
 - Configure Caffeine via yaml only: `spring.cache.type: caffeine` + `spring.cache.caffeine.spec` (e.g. `maximumSize=100,expireAfterWrite=30s`). Do **not** duplicate TTL in Java builders.
-- **All application caching flows through `CellHealthCacheService`** (or repo-specific `*CacheService`) using `@Cacheable(sync=true)` on read methods and `@CacheEvict` / `@Caching` on writes. Controllers, inventory services, event processors, and repositories **delegate** — they do not carry `@Cacheable`.
-- Cache names live in `CellHealthConstants` (e.g. `CACHE_CELL_SNAPSHOTS`, `CACHE_HEALTHZ_ROLLUP`).
+- **All application caching flows through `AppCacheService`** (or repo-specific `*CacheService`) using `@Cacheable(sync=true)` on read methods and `@CacheEvict` / `@Caching` on writes. Controllers, inventory services, event processors, and repositories **delegate** — they do not carry `@Cacheable`.
+- Cache names live in `AppConstants` (e.g. `CACHE_RESOURCE_SNAPSHOTS`, `CACHE_HEALTHZ_ROLLUP`).
 - Evict affected keys **before** SSE broadcast or downstream publish so clients never see stale post-write data.
 - Do **not** cache DTOs with computed staleness — cache raw snapshots; apply staleness after cache hit in the service layer.
 - SSE connection tables belong in a dedicated `SseEmitterRegistry` `@Component`, not on domain services.
@@ -383,15 +383,15 @@ Additional rules:
 ```java
 @Service
 @RequiredArgsConstructor
-public class CellHealthCacheService implements ICellHealthCacheService {
-    private final ICellSnapshotRepository repository;
+public class AppCacheService implements IAppHealthCacheService {
+    private final IResourceSnapshotRepository repository;
 
-    @Cacheable(value = CellHealthConstants.CACHE_CELL_SNAPSHOTS, key = "#cellId", sync = true)
-    public Optional<CellSnapshotDTO> getRawCell(String cellId) {
-        return repository.findByCellId(cellId);
+    @Cacheable(value = AppConstants.CACHE_RESOURCE_SNAPSHOTS, key = "#resourceId", sync = true)
+    public Optional<ResourceSnapshotDTO> getRawResource(String resourceId) {
+        return repository.findByResourceId(resourceId);
     }
 
-    @CacheEvict(value = {CellHealthConstants.CACHE_CELL_SNAPSHOTS, CellHealthConstants.CACHE_CELL_LIST}, allEntries = true)
+    @CacheEvict(value = {AppConstants.CACHE_RESOURCE_SNAPSHOTS, AppConstants.CACHE_RESOURCE_LIST}, allEntries = true)
     public void evictAll() { }
 }
 ```
@@ -435,27 +435,27 @@ In Spring Boot 4, `MockitoTestExecutionListener` is **not** auto-registered — 
 ```java
 // GOOD — pure unit test
 @ExtendWith(MockitoExtension.class)
-class CellHealthAggregatorTest {
+class AppHealthAggregatorTest {
 
     @Mock
-    private ICellHealthProbeService probeService;
+    private IAppHealthProbeService probeService;
 
     @InjectMocks
-    private CellHealthAggregatorService aggregator;
+    private AppHealthAggregatorService aggregator;
 
     @Captor
-    ArgumentCaptor<String> cellIdCaptor;
+    ArgumentCaptor<String> resourceIdCaptor;
 
     @Test
     @DisplayName("given critical dependency DOWN, aggregation result is DOWN")
     void givenCriticalDepDown_whenAggregate_thenResultIsDown() {
         when(probeService.probe("cosmos")).thenReturn(CheckResult.DOWN);
 
-        var result = aggregator.aggregate("cell-01");
+        var result = aggregator.aggregate("tenant-01");
 
         assertThat(result.status()).isEqualTo("DOWN");
-        verify(probeService).probe(cellIdCaptor.capture());
-        assertThat(cellIdCaptor.getValue()).isEqualTo("cosmos");
+        verify(probeService).probe(resourceIdCaptor.capture());
+        assertThat(resourceIdCaptor.getValue()).isEqualTo("cosmos");
     }
 }
 ```
@@ -483,7 +483,7 @@ assertThat(actualDto)
 SoftAssertions.assertSoftly(softly -> {
     softly.assertThat(response.status()).isEqualTo(400);
     softly.assertThat(response.message()).isNotBlank();
-    softly.assertThat(response.errors()).containsKey("cellId");
+    softly.assertThat(response.errors()).containsKey("resourceId");
 });
 
 // BAD
@@ -495,7 +495,7 @@ assertNull(response.getBody().getErrors());          // use assertThat(...).isNu
 
 ```java
 @ExtendWith(MockitoExtension.class)
-class CellHealthRollupTest {
+class AppHealthRollupTest {
 
     @Nested
     @DisplayName("when all subsystems are healthy")
@@ -546,15 +546,15 @@ Use `@MockitoBean` (not `@MockBean` — removed in Boot 4).
 `@SpringBootTest`/`MockMvc` tests must run filters to exercise `CorrelationIdFilter` and security.
 
 ```java
-@WebMvcTest(CellHealthController.class)
+@WebMvcTest(HealthController.class)
 @Import({SecurityConfig.class, GlobalExceptionHandler.class, MessageSourceConfig.class, Translator.class})
 @AutoConfigureMockMvc
-class CellHealthControllerTest {
+class HealthControllerTest {
 
     @Autowired MockMvc mockMvc;
 
     @MockitoBean  // NOT @MockBean — that annotation is removed in Boot 4
-    ICellHealthAggregatorService aggregatorService;
+    IAppHealthAggregatorService aggregatorService;
 
     @Test
     @WithMockUser
@@ -596,7 +596,7 @@ class CellHealthControllerTest {
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureRestTestClient
 @Testcontainers
-class CellHealthAggregatorIT {
+class AppHealthAggregatorIT {
 
     @Autowired
     RestTestClient restClient;
@@ -648,10 +648,10 @@ abstract class AbstractWebMvcTest {
 }
 
 // Concrete test — inherits wiring, no repetition
-@WebMvcTest(CellHealthController.class)
-class CellHealthControllerTest extends AbstractWebMvcTest {
+@WebMvcTest(HealthController.class)
+class HealthControllerTest extends AbstractWebMvcTest {
 
-    @MockitoBean ICellHealthAggregatorService aggregatorService;
+    @MockitoBean IAppHealthAggregatorService aggregatorService;
 
     @Test
     @WithMockUser
@@ -668,23 +668,23 @@ Use Java records as factories for canonical test values. Avoids scattered magic 
 domain language in one place.
 
 ```java
-// src/test/java/.../support/CellHealthFixtures.java
-public final class CellHealthFixtures {
-    private CellHealthFixtures() { }
+// src/test/java/.../support/AppHealthFixtures.java
+public final class AppHealthFixtures {
+    private AppHealthFixtures() { }
 
-    public static final String CELL_ID         = "cell-us-east-01";
+    public static final String RESOURCE_ID         = "region-us-east-01";
     public static final String COSMOS_ENDPOINT = "https://cosmos-test.documents.azure.com";
 
-    public static CellStatusDTO healthyCell() {
-        return new CellStatusDTO(CELL_ID, "UP", List.of(), Instant.now());
+    public static ResourceStatusDTO healthyResource() {
+        return new ResourceStatusDTO(RESOURCE_ID, "UP", List.of(), Instant.now());
     }
 
-    public static CellStatusDTO degradedCell(String reason) {
-        return new CellStatusDTO(CELL_ID, "DEGRADED", List.of(reason), Instant.now());
+    public static ResourceStatusDTO degradedStatus(String reason) {
+        return new ResourceStatusDTO(RESOURCE_ID, "DEGRADED", List.of(reason), Instant.now());
     }
 
-    public static CellStatusDTO downCell() {
-        return new CellStatusDTO(CELL_ID, "DOWN", List.of("cosmos", "eventhub"), Instant.now());
+    public static ResourceStatusDTO downResource() {
+        return new ResourceStatusDTO(RESOURCE_ID, "DOWN", List.of("cosmos", "eventhub"), Instant.now());
     }
 }
 ```
@@ -714,7 +714,7 @@ class TestInfraConfig {
 @SpringBootTest
 @Import(TestInfraConfig.class)
 @Testcontainers
-abstract class AbstractCellHealthIT {
+abstract class AbstractAppHealthIT {
     // shared wiring — all IT classes extend this
 }
 ```
@@ -725,18 +725,18 @@ JUnit 6 introduces `@ParameterizedClass` to run a whole class with different inp
 
 ```java
 @ParameterizedClass
-@ValueSource(strings = {"cell-us-east-01", "cell-eu-west-01", "cell-ap-southeast-01"})
-class MultiCellAggregationTest {
+@ValueSource(strings = {"region-us-east-01", "region-eu-west-01", "region-ap-southeast-01"})
+class MultiTenantAggregationTest {
 
     @Parameter
-    String cellId;
+    String resourceId;
 
-    @MockitoBean ICellHealthAggregatorService aggregatorService;
+    @MockitoBean IAppHealthAggregatorService aggregatorService;
 
     @Test
-    void aggregatesHealthForEachCell() {
-        when(aggregatorService.aggregate(cellId)).thenReturn(CellHealthFixtures.healthyCell());
-        assertThat(aggregatorService.aggregate(cellId).status()).isEqualTo("UP");
+    void aggregatesHealthForEachResource() {
+        when(aggregatorService.aggregate(resourceId)).thenReturn(AppHealthFixtures.healthyResource());
+        assertThat(aggregatorService.aggregate(resourceId).status()).isEqualTo("UP");
     }
 }
 ```
@@ -750,9 +750,9 @@ top-level class:
 ```java
 @SpringBootTest
 @SpringExtensionConfig(useTestClassScopedExtensionContext = true)
-class CellHealthServiceIT {
+class AppHealthServiceIT {
 
-    @Autowired ICellHealthAggregatorService service;
+    @Autowired IAppHealthAggregatorService service;
 
     @Nested class WhenCriticalDepDown { /* inherits context correctly */ }
     @Nested class WhenAllHealthy      { /* inherits context correctly */ }
@@ -809,13 +809,13 @@ Do not reintroduce them.
 | 12 | Register MDC/correlation filters at default order | `@Order(Ordered.HIGHEST_PRECEDENCE)` and `MDC.clear()` in `finally` (virtual-thread safe) | code review |
 | 13 | `new RecordDTO(...)` with many args in services/mappers | MapStruct `@Mapping` variant methods or dedicated mapper | code review |
 | 14 | Inline package names in signatures (`com.example.app...HealthStatus`) | Normal imports | code review |
-| 15 | Short injected names (`mapper`, `service`) | Descriptive names matching type (`cellHealthEventMapper`) | code review |
+| 15 | Short injected names (`mapper`, `service`) | Descriptive names matching type (`appHealthEventMapper`) | code review |
 | 16 | Hardcoded `@Scheduled(fixedDelayString = "15000")` | Property placeholder `${app...}` + yaml + constant default | code review |
 | 17 | Hardcoded path strings in controllers (`"/events"`, `"/stream"`) | `ApiConstants` segments | code review |
 | 18 | String-matching HTTP codes in exception messages (`contains("429")`) | `HttpStatus` / SDK `getStatusCode()` | code review |
 | 19 | Stub `IHealthProbe` bean that throws on use | Factory that builds real probe instances (`PeerProbeFactory`) | code review |
 | 20 | Duplicate `RestClient` beans with different timeout sources | Single bean from `RestClientProperties` | code review |
-| 21 | Raw `Caffeine.newBuilder()` or `private final Cache<>` / `ConcurrentHashMap` fields on `@Service`/`@Repository` production beans | `@EnableCaching` + yaml spec; sole owner `CellHealthCacheService` with `@Cacheable`/`@CacheEvict`; test/local in-memory stores `@Profile("local","test")` only | ArchUnit `productionBeansMustNotDeclareMutableCollectionFields` |
+| 21 | Raw `Caffeine.newBuilder()` or `private final Cache<>` / `ConcurrentHashMap` fields on `@Service`/`@Repository` production beans | `@EnableCaching` + yaml spec; sole owner `AppCacheService` with `@Cacheable`/`@CacheEvict`; test/local in-memory stores `@Profile("local","test")` only | ArchUnit `productionBeansMustNotDeclareMutableCollectionFields` |
 | 22 | Repeat `optional.orElseThrow(() -> new EntityNotFoundException(...))` in controllers | Add `require*` / `read*ById` on the service that delegates to cached `find*`; controller calls the throwing method (§7) | code review |
 | 23 | Throw inside `@Cacheable` when negative caching of misses is required | Keep `@Cacheable` on `find*` returning `Optional`; add non-cached `require*` wrapper | code review |
 
@@ -828,8 +828,8 @@ Do not reintroduce them.
 | Probe detail strings | i18n via `ProbeMessageResolver` + `messages.properties`; log full exception at ERROR, return resolved message to rollup |
 | Executor lifecycle | Custom `ExecutorService` beans need `@PreDestroy shutdown()`; cancel in-flight futures when deadlines expire |
 | Micrometer gauges | Hold mutable values in `AtomicInteger`/`AtomicLong` registered once — do not call `meterRegistry.gauge(name, primitive)` on every update |
-| Statelessness | Horizontally scalable production beans must **not** declare class-level `Map`/`List`/`Set`/`Queue`/`Cache` fields. Shared durable state → Cosmos/Event Hub SDK. Ephemeral read cache → Spring `CacheManager` via centralized `CellHealthCacheService` (`@Cacheable`/`@CacheEvict`). SSE connections → `SseEmitterRegistry`. In-memory repos/consumers are `@Profile("local")` / `@Profile("test")` only |
-| Control-plane scope | Cell-type–gated probe lists (infra always; peer services only for `controlplane` cells); real actuator indicators live in peer repos (separate Jira, e.g. PROJ-123) |
+| Statelessness | Horizontally scalable production beans must **not** declare class-level `Map`/`List`/`Set`/`Queue`/`Cache` fields. Shared durable state → Cosmos/Event Hub SDK. Ephemeral read cache → Spring `CacheManager` via centralized `AppCacheService` (`@Cacheable`/`@CacheEvict`). SSE connections → `SseEmitterRegistry`. In-memory repos/consumers are `@Profile("local")` / `@Profile("test")` only |
+| Control-plane scope | tenant-type–gated probe lists (infra always; peer services only for `controlplane` tenants); real actuator indicators live in peer repos (separate Jira, e.g. PROJ-123) |
 
 ### Enforcement mechanism
 
