@@ -26,6 +26,73 @@ npx @cobusgreyling/loop-audit . --suggest
 /agentic-loop --help
 ```
 
+## Recommended companion setup (efficient agent behaviour)
+
+This kit orchestrates **what** the agent does each phase. For **durable memory** and **fast codebase navigation**, bootstrap these two projects in the same monorepo:
+
+### [LLM-wiki](https://github.com/Ss1024sS/LLM-wiki) — compile-first project memory
+
+Karpathy-style **wiki-first** knowledge: raw sources → compiled `docs/wiki/` → code. Stops every session from re-explaining decisions.
+
+```bash
+git clone https://github.com/Ss1024sS/LLM-wiki.git
+python3 LLM-wiki/scripts/bootstrap_knowledge_system.py /path/to/your-monorepo "Your Project"
+```
+
+After bootstrap, Phase 0 reads `docs/wiki/index.md`, `current-status.md`, and `log.md`; Phase 9 writeback appends `log.md` and refreshes status. See [UNIVERSAL.md](https://github.com/Ss1024sS/LLM-wiki/blob/main/UNIVERSAL.md).
+
+### [graphify](https://github.com/safishamsi/graphify) — queryable codebase knowledge graph
+
+Turns repos into `graphify-out/graph.json` so agents answer architecture questions without full-tree search.
+
+```bash
+# Install graphify skill / CLI per repo README, then from monorepo root:
+graphify update <repo-path>          # or graphify <path> for first build
+graphify query "How does auth flow to the API?"
+graphify path "Controller" "Repository"
+```
+
+Use in **Phase 0** (context sync) and **Phase 9** (update graph after code changes). Optional: merge multi-repo graphs for polyglot monorepos.
+
+| Layer | Tool | Agent benefit |
+|-------|------|----------------|
+| Decisions & status | LLM-wiki | No amnesia across sessions; mandatory writeback |
+| Code structure | graphify | Sub-second `query` / `path` / `explain` vs blind grep |
+| Loop discipline | This kit | Plan-mode-first phases, human gates, Failure Router |
+
+## Maturity modes (L1 · L2 · L3-push)
+
+Every run has a **mode** (`--mode` or profile `default_mode`). Modes control how far past Phase 2 the loop may go **without** you approving in chat.
+
+| Mode | Phases | Code / git | Typical use |
+|------|--------|------------|-------------|
+| **L1** (default) | 0 → 2 | **None** — report-only | Planning, PR review tables, ops hypothesis, safe pilots |
+| **L2** | 0 → 5+ (draft) | Implement, verify, review; **PR draft**; you may push manually | Feature work after you approve the plan |
+| **L3-push** | 0 → 7+ | L2 + squash, **push feature branch**, CI babysit (max 3 cycles); **you merge** | End-to-end ship with human merge only |
+
+**Rules:**
+
+- Loop **always** starts in Cursor **Plan mode** — even L2/L3 do not auto-run in Agent mode.
+- **Stop after Phase 2** until you explicitly approve (e.g. “proceed with implementation” or `--mode L2` / `L3-push` with confirmation).
+- **L1 + `--pr`** → Phase 5 findings table only (`pr-code-review.mdc`); no auto-fix.
+- **L3-push** never force-pushes or merges to `main` — see `docs/safety.md`.
+
+```text
+L0 (loop-audit)  →  missing files; run npx @cobusgreyling/loop-audit . --suggest
+L1               →  context + plan + review; STOP before implement
+L2               →  implement + verify + review; PR draft
+L3-push          →  push branch + babysit CI; human merges PR
+```
+
+Examples:
+
+```text
+/agentic-loop --profile springboot-default --repo services/api PROJ-123
+/agentic-loop --mode L1 --profile springboot-default --repo services/api PROJ-123
+/agentic-loop --mode L2 --profile springboot-default --repo services/api PROJ-123
+/agentic-loop --mode L3-push --profile springboot-default --repo services/api PROJ-123
+```
+
 ## Validate your setup
 
 ```bash
@@ -169,7 +236,13 @@ flowchart TD
 
 ## External dependencies
 
-Compound Engineering Cursor plugin, loop-engineering, Cursor MCP (Atlassian, GitHub, Datadog, PagerDuty).
+| Dependency | Role |
+|------------|------|
+| [Compound Engineering](https://github.com/compound-engineering) | `ce-plan`, `ce-work`, `ce-code-review`, `ce-compound` |
+| [loop-engineering](https://github.com/cobusgreyling/loop-engineering) + [loop-audit](https://www.npmjs.com/package/@cobusgreyling/loop-audit) | L0→L1 readiness scoring |
+| [LLM-wiki](https://github.com/Ss1024sS/LLM-wiki) | Wiki-first memory (Phase 0 / 9) — **recommended** |
+| [graphify](https://github.com/safishamsi/graphify) | Codebase knowledge graph (Phase 0 / 9) — **recommended** |
+| Cursor MCP | Atlassian, GitHub, Datadog, PagerDuty (per profile) |
 
 ## License
 
