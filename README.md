@@ -170,13 +170,13 @@ Each phase is executed by the **`agentic-loop-orchestrator`** agent in **Plan mo
 |-------|------|---------|---------------|---------------|-------------|
 | **0** | Context sync | Load wiki, Jira, knowledge graph, profile context; snapshot state | [`loop-triage`](.cursor/skills/loop-triage/SKILL.md) · [`agentic-loop-runbook`](.cursor/skills/agentic-loop/SKILL.md) | — (optional: consumer domain skill) | Wiki + ticket context present |
 | **0b** | Ticket ack | Jira → In Progress; PagerDuty investigation note (ops) | Orchestrator · Atlassian / PagerDuty MCP | — | Ticket acknowledged |
-| **1** | Plan | Feature: `/ce-plan` + mandatory test matrix. Ops: hypothesis in STATE | `ce-plan` (Compound Engineering) | `jabrena-302`, `jabrena-311`, `jabrena-312` | Test matrix drafted |
-| **2** | Plan review | `ce-testing-reviewer` on matrix; ops evidence check | `ce-testing-reviewer` | `jabrena-302/311/312` | **L1 STOP** — human approves before Phase 3 |
-| **3** | Implement | `/ce-work` in target repo; match standards | `ce-work` | `java-springboot-standards.mdc`, `service-quality-drill.mdc` | Human approved plan |
-| **4** | Verify | Build, JaCoCo, diff coverage; maker/checker split | [`loop-verifier`](.cursor/agents/loop-verifier.md) · [`loop-verifier` skill](.cursor/skills/loop-verifier/SKILL.md) | `service-quality-drill.mdc`, `jabrena-*` | Build green; JaCoCo ≥ profile ratio |
-| **5** | Code review | PR path: `pr-code-review.mdc`. Else: `ce-code-review` vs `main` | `ce-code-review` · Bugbot · [`pr-code-review.mdc`](.cursor/rules/pr-code-review.mdc) | `java-springboot-standards`, `service-quality-drill`, `terraform-standards` (by `pr_type`) | No open P0/P1 on net-new findings |
-| **6** | Ship | Squash, push feature branch, PR, CI babysit (max 3) | `commit-push-pr` + `babysit` · [`loop-budget`](.cursor/skills/loop-budget/SKILL.md) | `service-quality-drill.mdc` | **L3-push** + human ship approval |
-| **7** | PR hygiene | Copilot/CodeQL threads: fix → test → reply → resolve | `ce-resolve-pr-feedback` | `service-quality-drill.mdc` | All review threads resolved |
+| **1** | Plan | Feature: `/ce-plan` + mandatory test matrix. Ops: hypothesis in STATE | `ce-plan` (Compound Engineering) | [jabrena-302](.cursor/rules/external/jabrena-302-java-testing-fundamentals.mdc), [jabrena-311](.cursor/rules/external/jabrena-311-spring-boot-slice-testing.mdc), [jabrena-312](.cursor/rules/external/jabrena-312-spring-boot-integration-testing.mdc) | Test matrix drafted |
+| **2** | Plan review | `ce-testing-reviewer` on matrix; ops evidence check | `ce-testing-reviewer` | [jabrena-302](.cursor/rules/external/jabrena-302-java-testing-fundamentals.mdc), [jabrena-311](.cursor/rules/external/jabrena-311-spring-boot-slice-testing.mdc), [jabrena-312](.cursor/rules/external/jabrena-312-spring-boot-integration-testing.mdc) | **L1 STOP** — human approves before Phase 3 |
+| **3** | Implement | `/ce-work` in target repo; match standards | `ce-work` | [java-springboot-standards.mdc](.cursor/rules/java-springboot-standards.mdc), [service-quality-drill.mdc](.cursor/rules/service-quality-drill.mdc) | Human approved plan |
+| **4** | Verify | Build, JaCoCo, diff coverage; maker/checker split | [`loop-verifier`](.cursor/agents/loop-verifier.md) · [`loop-verifier` skill](.cursor/skills/loop-verifier/SKILL.md) | [service-quality-drill.mdc](.cursor/rules/service-quality-drill.mdc), [jabrena-302](.cursor/rules/external/jabrena-302-java-testing-fundamentals.mdc), [jabrena-311](.cursor/rules/external/jabrena-311-spring-boot-slice-testing.mdc), [jabrena-312](.cursor/rules/external/jabrena-312-spring-boot-integration-testing.mdc) | Build green; JaCoCo ≥ profile ratio |
+| **5** | Code review | PR path: [pr-code-review.mdc](.cursor/rules/pr-code-review.mdc). Else: `ce-code-review` vs `main` | `ce-code-review` · Bugbot · [`pr-code-review.mdc`](.cursor/rules/pr-code-review.mdc) | [java-springboot-standards](.cursor/rules/java-springboot-standards.mdc), [service-quality-drill](.cursor/rules/service-quality-drill.mdc), [terraform-standards](.cursor/rules/terraform-standards.mdc) (by `pr_type`) | No open P0/P1 on net-new findings |
+| **6** | Ship | Squash, push feature branch, PR, CI babysit (max 3) | `commit-push-pr` + `babysit` · [`loop-budget`](.cursor/skills/loop-budget/SKILL.md) | [service-quality-drill.mdc](.cursor/rules/service-quality-drill.mdc) | **L3-push** + human ship approval |
+| **7** | PR hygiene | Copilot/CodeQL threads: fix → test → reply → resolve | `ce-resolve-pr-feedback` | [service-quality-drill.mdc](.cursor/rules/service-quality-drill.mdc) | All review threads resolved |
 | **8** | Close-the-loop | Jira comment: summary, tests, SHA, PR link, AC map | `jira-close-loop.sh` | — | Jira updated |
 | **9** | Wiki + compound | Append wiki log; refresh status; update knowledge graph | `ce-compound` · [LLM-wiki](https://github.com/Ss1024sS/LLM-wiki) · [graphify](https://github.com/safishamsi/graphify) | — | Durable learnings written back |
 
@@ -241,7 +241,7 @@ Each phase is executed by the **`agentic-loop-orchestrator`** agent in **Plan mo
 .cursor/skills/agentic-loop/scripts/parse-jacoco.sh <repo> <ratio>
 ```
 
-**Rules:** `service-quality-drill.mdc` (JaCoCo gate), `jabrena-*` (test coverage alignment)
+**Rules:** [service-quality-drill.mdc](.cursor/rules/service-quality-drill.mdc) (JaCoCo gate), [jabrena-302](.cursor/rules/external/jabrena-302-java-testing-fundamentals.mdc), [jabrena-311](.cursor/rules/external/jabrena-311-spring-boot-slice-testing.mdc), [jabrena-312](.cursor/rules/external/jabrena-312-spring-boot-integration-testing.mdc) (test coverage alignment)
 
 **Gate:** `./gradlew clean build` green; JaCoCo line ratio ≥ profile `jacoco_line_ratio` (default 0.80).
 
@@ -260,8 +260,8 @@ Each phase is executed by the **`agentic-loop-orchestrator`** agent in **Plan mo
 
 | `pr_type` | Pass 3 applies |
 |-----------|----------------|
-| `java-only` | `java-springboot-standards` + ArchUnit + `service-quality-drill` |
-| `infra-only` | `terraform-standards` + observability checks; no JaCoCo |
+| `java-only` | [java-springboot-standards](.cursor/rules/java-springboot-standards.mdc) + ArchUnit + [service-quality-drill](.cursor/rules/service-quality-drill.mdc) |
+| `infra-only` | [terraform-standards](.cursor/rules/terraform-standards.mdc) + observability checks; no JaCoCo |
 | `mixed` | Segmented Java + infra; `Cross-cutting` for TF↔Java links |
 
 **Default for `--pr`:** L1 report-only (`net_new_count` / `suppressed_count` table; no auto-fix).
@@ -276,7 +276,7 @@ Each phase is executed by the **`agentic-loop-orchestrator`** agent in **Plan mo
 
 **Script:** `gh-pr-checks-watch.sh` — max **3** remote CI cycles per PR
 
-**Rules:** `service-quality-drill.mdc` (required checks: lint, build-and-test, Trivy, dependency-review, gitleaks, CodeQL)
+**Rules:** [service-quality-drill.mdc](.cursor/rules/service-quality-drill.mdc) (required checks: lint, build-and-test, Trivy, dependency-review, gitleaks, CodeQL)
 
 **Requires:** `--mode L3-push` + explicit human “push” approval. Never merges to `main`.
 
@@ -364,11 +364,11 @@ FILES
 
 | Rule | When | Phase |
 |------|------|-------|
-| java-springboot-standards.mdc | Java/Spring Boot code | 3, 4, 5 |
-| service-quality-drill.mdc | Build, JaCoCo, CI | 4, 6, 7 |
-| pr-code-review.mdc | PR review target | 5 |
-| terraform-standards.mdc | Infra / mixed PRs | 5 |
-| jabrena-302/311/312 | Test design | 1, 2, 4 |
+| [java-springboot-standards.mdc](.cursor/rules/java-springboot-standards.mdc) | Java/Spring Boot code | 3, 4, 5 |
+| [service-quality-drill.mdc](.cursor/rules/service-quality-drill.mdc) | Build, JaCoCo, CI | 4, 6, 7 |
+| [pr-code-review.mdc](.cursor/rules/pr-code-review.mdc) | PR review target | 5 |
+| [terraform-standards.mdc](.cursor/rules/terraform-standards.mdc) | Infra / mixed PRs | 5 |
+| [jabrena-302](.cursor/rules/external/jabrena-302-java-testing-fundamentals.mdc), [jabrena-311](.cursor/rules/external/jabrena-311-spring-boot-slice-testing.mdc), [jabrena-312](.cursor/rules/external/jabrena-312-spring-boot-integration-testing.mdc) | Test design | 1, 2, 4 |
 
 Verify rules:
 
