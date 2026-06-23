@@ -16,13 +16,56 @@ Quality gates and Failure Router reference for the Agentic Loop Engineering Kit 
 | 6 | Ship | Push/PR fail; CI not green after 3 babysit |
 | 7 | Hygiene | Unresolved Copilot/CodeQL threads |
 | 8 | Close | No Jira comment with tests + SHA |
-| 9 | Wiki | log.md / knowledge-graph not updated |
+| 9a | Wiki | log.md / graphify not updated |
+| 9d | Self-improvement | L2/L3 only; preflight or contract validation fails closed |
+
+## Phase 9d — Self-improvement (L2/L3)
+
+| Gate | Rule |
+|------|------|
+| **Local preflight** | `scripts/loop_9d_preflight.sh` before validate **and** before approve; fail closed |
+| **CI (optional)** | [`.github/workflows/loop-9d-checks.yml`](../../.github/workflows/loop-9d-checks.yml) mirrors preflight when workspace is in git — not required for local-only loop |
+| Mode | L1 **skips** 9d; 9d failure is advisory |
+| Eligibility | `NO_LEARNINGS` when L1, `self_improvement: false`, or duplicate/no new insight |
+| Contract | TOON JSON; schema validation **fails closed** (`SCHEMA_INVALID`) |
+| Validate | No `approve` → `PENDING_APPROVAL`; `--dry-run` → `PENDING_APPROVAL` (not `APPLY_SUCCESS`) |
+| Apply | `approve` only after human message → `APPLY_SUCCESS` / `IDEMPOTENT_SKIP` |
+| Unknown fields | Rejected at all nested levels |
+| Path allowlist | `loop-kit/`, `.cursor/skills/`, `.cursor/rules/`, `docs/loop-learnings/` only → `PATH_NOT_ALLOWED` |
+| Repo match | `contract.repo` must equal active `--repo` → `REPO_MISMATCH` |
+| YAML mutation | `upsert_known_quirk` only (max 5, rotate oldest) |
+| Markdown | Append-only via `LOOP-LEARNING:<fingerprint>:<run>` markers (≤20 lines) |
+| Modes | `loop_learning` auto-apply; `promotion_proposal` staged only |
+| Dual contracts | `-learning.json` before `-promotion.json`; orphan → `ORPHAN_PROMOTION` |
+| Idempotency | Duplicate marker → `IDEMPOTENT_SKIP` |
+| Human | **STOP after summary** — same-turn approve forbidden; branch `loop/skill-update-*` |
+| Wiki | 9d log line only on approve (separate from 9a feature line) |
+| No profile | Rationale-only contract (`targets: []`) |
+
+<!-- PHASE-9D-TRANSITIONS:verbatim:start — do not edit in mirrors -->
+| Step | Action | Transition |
+|------|--------|------------|
+| 9a | wiki log + current-status | always |
+| 9b | graphify update | always |
+| 9c | ce-compound | always |
+| 9d-eligible | check L2/L3 + `self_improvement` | skip → end |
+| 9d-extract | loop-self-improvement | `NO_LEARNINGS` → end |
+| 9d-preflight | `scripts/loop_9d_preflight.sh` | fail closed; run before validate **and** before apply |
+| 9d-validate | apply script, no approve | `PENDING_APPROVAL` → STOP |
+| 9d-gate | present summary table | **STOP — same-turn approve forbidden** |
+| 9d-apply | user approve → `approve` | `APPLY_SUCCESS` / `IDEMPOTENT_SKIP` |
+| 9d-promo | promotion contract if any | after learning applied |
+<!-- PHASE-9D-TRANSITIONS:verbatim:end -->
+
+Result codes: `LOOP_LEARNING_RESULT=<CODE>` — see [`contracts/README.md`](contracts/README.md).
+
+Generalization thresholds: 1 run → `loop_learning`; 2+ → `promotion_proposal` (profile-family / context_skill); 5+ → `springboot-all`.
 
 ## JaCoCo
 
 | Profile | Line ratio | Source |
 |---------|------------|--------|
-| `my-service` | **1.00** | `build.gradle.kts` in aggregator + central |
+| `cell-health` | **1.00** | `build.gradle.kts` in aggregator + central |
 | `springboot-default` + repo profiles | **0.80** typical | per-repo `build.gradle.kts` |
 
 Script: `.cursor/skills/agentic-loop/scripts/parse-jacoco.sh <repo> <ratio>`
@@ -34,7 +77,7 @@ When `--pr <n>` or a GitHub PR URL triggers `@pr-code-review`:
 | `pr_type` | Pass 3 | Phase 4-style gates (optional L2 verify) |
 |-----------|--------|------------------------------------------|
 | **java-only** | `java-springboot-standards` + ArchUnit + drill Pass 3a–3d | `./gradlew clean build`, JaCoCo per profile, CI checks |
-| **infra-only** | `terraform-standards` + observability wiki when DDog touched | `terraform fmt` / `validate` if `.tf` changed; **no** JaCoCo / gradle; **no** `terraform apply` |
+| **infra-only** | `cba-terraform-standards` + observability wiki when DDog touched | `terraform fmt` / `validate` if `.tf` changed; **no** JaCoCo / gradle; **no** `terraform apply` |
 | **mixed** | Segmented Java + infra; `Cross-cutting` for TF↔Java links | Per-segment: Java gates on Java hunks only; infra gates on TF/workflow hunks |
 
 **Functional Context must include:**

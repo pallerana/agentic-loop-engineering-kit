@@ -20,4 +20,4 @@ Shared caps for all Agentic Loop Engineering Kit profiles. Orchestrator must sto
 | Implementer (`ce-work`) | sonnet / codex |
 | Review | dedicated review subagents |
 
-Tune after `loop-audit --suggest` and pilot on PROJ-123/156.
+Tune after `loop-audit --suggest` and pilot on PROJ-153/156.

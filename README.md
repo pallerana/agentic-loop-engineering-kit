@@ -710,3 +710,73 @@ flowchart LR
 ## License
 
 Apache-2.0 — see LICENSE.
+
+<!-- EXPORT:toc:start -->
+
+<!-- EXPORT:toc:end -->
+
+<!-- EXPORT:phase-9d:start -->
+### Phase 9d (self-improvement)
+
+L2/L3 only. TOON contract → `apply-loop-learning.sh --contract`. See `loop-kit/contracts/README.md`.
+
+**Local preflight** (before validate and approve):
+
+```bash
+python3 -m venv .venv-loop-9d && .venv-loop-9d/bin/pip install -r scripts/requirements-loop-9d.txt
+export CURSOR_PROJECT_DIR="$(pwd)"
+./scripts/loop_9d_preflight.sh
+```
+
+**Run-log token:**
+
+```text
+9d-preflight: ok | 9d: PENDING_APPROVAL → APPLY_SUCCESS | staging=<path> | branch=<name>
+```
+<!-- EXPORT:phase-9d:end -->
+
+<!-- EXPORT:tools-table:start -->
+| Tool | Role |
+|------|------|
+| `loop_9d_preflight.sh` | Local 9d gate (venv auto-detect) |
+| `loop_9d_conformance_check.py` | Doc parity / verbatim blocks |
+| `loop_9d_coverage_check.py` | Apply-engine coverage gate |
+| `apply-loop-learning.sh` | TOON contract apply |
+| `loop-self-improvement` skill | Phase 9d extraction |
+| CE: `ce-doc-review`, `ce-debug`, `ce-compound-refresh` | Optional selective plugins |
+| LLM-wiki, graphify | Companion setup |
+| `npx @cobusgreyling/loop-audit` | Setup validation |
+<!-- EXPORT:tools-table:end -->
+
+<!-- EXPORT:diagram-9d-state:start -->
+```mermaid
+flowchart TD
+  preflight[9d_preflight] --> validate[validate PENDING_APPROVAL]
+  validate --> stop[Human STOP]
+  stop --> preflight2[preflight again]
+  preflight2 --> approve[approve APPLY_SUCCESS]
+```
+<!-- EXPORT:diagram-9d-state:end -->
+
+<!-- EXPORT:diagram-9d-control:start -->
+```mermaid
+flowchart LR
+  applyEngine[apply_loop_learning.py]
+  preflight[loop_9d_preflight.sh]
+  conformance[loop_9d_conformance_check]
+  coverage[loop_9d_coverage_check]
+  preflight --> conformance
+  preflight --> coverage
+  applyEngine --> coverage
+```
+<!-- EXPORT:diagram-9d-control:end -->
+
+<!-- EXPORT:diagram-export-boundary:start -->
+```mermaid
+flowchart TB
+  kit[agentic-loop-engineering-kit]
+  consumer[Consumer monorepo]
+  kit -->|copy loop-kit + .cursor| consumer
+  consumer -->|docs/loop-learnings runtime| consumer
+```
+<!-- EXPORT:diagram-export-boundary:end -->

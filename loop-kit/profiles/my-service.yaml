@@ -1,0 +1,5 @@
+extends: springboot-default
+repos:
+  - your-service-api
+pattern_doc: loop-kit/patterns/feature-loop-example.md
+known_quirks:

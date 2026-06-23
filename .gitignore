@@ -3,3 +3,8 @@
 # IDE
 .idea/
 node_modules/
+# Phase 9d local venv + coverage artifacts
+.venv-loop-9d/
+.coverage
+**/__pycache__/
+*.pyc

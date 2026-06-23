@@ -2,7 +2,7 @@
 name: ops-incident-loop
 description: >-
   Ops-incident profile extension for Agentic Loop Engineering Kit — Datadog/PagerDuty investigation,
-  hypothesis docs, knowledge-graph ddog slice. L1 default; handoff to feature profile for fixes.
+  hypothesis docs, graphify ddog slice. L1 default; handoff to feature profile for fixes.
 ---
 
 # Ops Incident Loop
@@ -23,10 +23,10 @@ Thin extension for `ops-incident` profile. Orchestrator: [`agentic-loop`](../age
 |--------|--------|
 | **Datadog MCP** | Monitor, logs, metrics, traces for `service:` tag |
 | **PagerDuty MCP** | Incident timeline, services, notes |
-| **knowledge-graph** | `knowledge-graph query` on `observability__` nodes; path to Java handlers |
+| **graphify** | `graphify query` on `ddog__` nodes; path to Java handlers |
 | **Wiki** | [`ops-and-oncall.md`](../../../docs/wiki/ops-and-oncall.md), [`observability-ddog.md`](../../../docs/wiki/observability-ddog.md) |
 | **Glean** | `/codebase-context` for alert service |
-| **DDog repo wiki** | `DDog_1000896_iac_live/docs/wiki/` (cross-link only) |
+| **DDog repo wiki** | `observability-iac//docs/wiki/` (cross-link only) |
 
 Record in [`ops-incident-state.md`](../../../loop-kit/ops-incident-state.md).
 
@@ -49,8 +49,8 @@ Template in STATE file:
 ## L2 fix scope (human approved)
 
 ```text
-/agentic-loop --profile ops-incident --handoff my-service \
-  --repo your-service-api PROJ-123 \
+/agentic-loop --profile ops-incident --handoff cell-health \
+  --repo your-service-cell-health-aggregator PROJ-153 \
   --from-state loop-kit/ops-incident-state.md
 ```
 
@@ -71,4 +71,4 @@ Continues feature phases 0–9 on target profile.
 ## Query templates (PagerDuty)
 
 - Incident notes: root cause candidates, linked deploys
-- Service dependencies: upstream/downstream peer services
+- Service dependencies: upstream/downstream cell services

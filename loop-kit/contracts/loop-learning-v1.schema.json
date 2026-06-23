@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "loop-learning-v1.schema.json",
+  "title": "Loop Learning Contract v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "mode",
+    "jira_key",
+    "fingerprint",
+    "scope",
+    "profile",
+    "repo",
+    "rationale_path",
+    "targets",
+    "actions"
+  ],
+  "properties": {
+    "contract_version": { "const": "1" },
+    "mode": { "enum": ["loop_learning", "promotion_proposal"] },
+    "jira_key": { "type": "string", "pattern": "^[A-Z]+-[0-9]+$" },
+    "fingerprint": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+    "scope": {
+      "enum": [
+        "single-repo",
+        "profile-family",
+        "context_skill",
+        "springboot-all",
+        "ops",
+        "pr-review"
+      ]
+    },
+    "profile": { "type": "string" },
+    "repo": { "type": "string" },
+    "rationale_path": {
+      "type": "string",
+      "pattern": "^docs/loop-learnings/"
+    },
+    "min_runs": { "type": "integer", "minimum": 1 },
+    "runs": { "type": "integer", "minimum": 0 },
+    "targets": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/target" }
+    },
+    "actions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/action" }
+    }
+  },
+  "$defs": {
+    "allowedPath": {
+      "type": "string",
+      "pattern": "^(loop-kit/|\\.cursor/skills/|\\.cursor/rules/|docs/loop-learnings/)"
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "action"],
+      "properties": {
+        "path": { "$ref": "#/$defs/allowedPath" },
+        "action": { "enum": ["append_markdown"] },
+        "subsection": { "type": "string" },
+        "lines": {
+          "type": "array",
+          "items": { "type": "string" },
+          "maxItems": 20
+        },
+        "note": { "type": "string" }
+      }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "profile", "summary"],
+      "properties": {
+        "action": { "enum": ["upsert_known_quirk"] },
+        "profile": { "type": "string" },
+        "summary": { "type": "string", "maxLength": 200 }
+      }
+    }
+  }
+}

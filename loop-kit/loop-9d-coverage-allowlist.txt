@@ -1,0 +1,6 @@
+# line_or_branch | reason | YYYY-MM-DD
+# Mandatory expiry (max 14 days) + reason. When active, append to 9d run-log row:
+#   | allowlist=<line>:<reason>:<YYYY-MM-DD>
+# Example:
+# 354 | write_profile_quirks continue | 2026-07-07
+354 | write_profile_quirks continue after quirk block skip | 2026-07-07
