@@ -1,0 +1,34 @@
+name: Loop 9d Checks
+
+on:
+  push:
+    paths:
+      - "loop-kit/**"
+      - ".cursor/skills/agentic-loop/**"
+      - "scripts/loop_9d_*"
+      - "scripts/requirements-loop-9d.txt"
+  pull_request:
+    paths:
+      - "loop-kit/**"
+      - ".cursor/skills/agentic-loop/**"
+      - "scripts/loop_9d_*"
+      - "scripts/requirements-loop-9d.txt"
+  workflow_dispatch:
+
+jobs:
+  loop-9d-checks:
+    runs-on: ubuntu-latest
+    continue-on-error: true  # optional mirror when workspace is in git; never required for local-only Cursor loop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Phase 9d test dependencies
+        run: pip install -r scripts/requirements-loop-9d.txt
+      - name: Apply-engine coverage (effective 100%)
+        env:
+          CURSOR_PROJECT_DIR: ${{ github.workspace }}
+        run: python3 scripts/loop_9d_coverage_check.py
+      - name: Phase 9d conformance (strict)
+        run: python3 scripts/loop_9d_conformance_check.py --strict

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Agentic Loop Engineering Kit — repo-adaptive build (Gradle preferred for your-service)
+# Agentic Loop Engineering Kit — repo-adaptive build (Gradle preferred for cellcp)
 set -euo pipefail
 
 REPO="${1:?usage: gradle-build.sh <repo-path>}"

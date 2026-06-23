@@ -3,13 +3,16 @@ description: Base profile for any your-service-* Java/Spring Boot service (Gradl
 build_tool: gradle
 build_command: "./gradlew clean build"
 jacoco_line_ratio: 0.80
+pattern_doc: null
+loop_playbook: null
+known_quirks: []
+failure_history: []
+ac_test_map: {}
+self_improvement: false
+skill_update_min_runs: 2
 rules:
   - java-springboot-standards.mdc
   - service-quality-drill.mdc
-  - pr-code-review.mdc
-  - external/jabrena-302-java-testing-fundamentals.mdc
-  - external/jabrena-311-spring-boot-slice-testing.mdc
-  - external/jabrena-312-spring-boot-integration-testing.mdc
 phases_enabled: [0, 0b, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 ship: human-approved
 default_mode: L1

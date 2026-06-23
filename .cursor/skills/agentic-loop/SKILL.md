@@ -9,7 +9,7 @@ description: >-
 
 Profile-driven loop for your monorepo Java services and ops incidents.
 
-**Catalog:** [`loop-kit/LOOP.md`](../../../loop-kit/LOOP.md) · **Gates:** [`GATES.md`](../../../loop-kit/GATES.md) · **Wiki:** [`your-loop-wiki.md`](../../../docs/wiki/your-loop-wiki.md)
+**Catalog:** [`loop-kit/LOOP.md`](../../../loop-kit/LOOP.md) · **Gates:** [`GATES.md`](../../../loop-kit/GATES.md) · **Wiki:** [`cell-health-agent-loop.md`](../../../docs/wiki/your-loop-wiki.md)
 
 ## Hard rules (plan-mode-first)
 
@@ -24,7 +24,7 @@ Profile-driven loop for your monorepo Java services and ops incidents.
 
 ```text
 /agentic-loop --profile <id> [options] [target]
-/agentic-loop --profile my-service [options] [target]   # alias → --profile my-service
+ [options] [target]   # alias → --profile cell-health
 ```
 
 ### PR review targets (`--pr` or URL)
@@ -38,11 +38,11 @@ Profile-driven loop for your monorepo Java services and ops incidents.
 
 **Default for PR review:** `--mode L1` (report-only per `pr-code-review.mdc`).
 
-Profile inference from repo name: `your-service-*` → matching profile (`your-service`, `your-service`, etc.); `infra/` → `--repo infra/`.
+Profile inference from repo name: `your-service-*` → matching profile (`cellrouter`, `cellassignments`, etc.); `infra/` → `--repo infra/`.
 
 ```text
 # Java PR — auto-detects java-only
-/agentic-loop --profile your-service --mode L1 --pr 78
+/agentic-loop --profile cellrouter --mode L1 --pr 78
 
 # URL only — auto-resolves repo + PR number
 /agentic-loop --mode L1 https://github.com/<org>/your-service-api/pull/123
@@ -51,7 +51,7 @@ Profile inference from repo name: `your-service-*` → matching profile (`your-s
 /agentic-loop --profile springboot-default --repo infra/ --mode L1 --pr <n>
 
 # Thread hygiene after green CI (Phase 7 — not full review)
-/agentic-loop --profile my-service --phase 7 --pr 2
+/agentic-loop --profile cell-health --phase 7 --pr 2
 ```
 
 **`--help` or no args:** print help from [`.cursor/commands/agentic-loop.md`](../../commands/agentic-loop.md) and **stop**.
@@ -82,13 +82,15 @@ Execute in order unless `--phase` resumes (validate prerequisites).
 Delegate triage: [`loop-triage`](../loop-triage/SKILL.md) or inline:
 
 - Wiki: `version_check.py`, `index.md`, `current-status.md`, `log.md`.
-- Profile `context_skill` if set (e.g. `your-domain-skill` Phase 0).
-- Jira/Confluence per profile; `knowledge-graph query` for touched repos.
+- Profile `pattern_doc` if set → read (workspace-root path; active repo subsection when multi-repo).
+- Profile `loop_playbook` if set → read (e.g. cell-health feature loop).
+- Profile `context_skill` if set (e.g. `cell-health-mvp` Phase 0).
+- Jira/Confluence per profile; `graphify query` for touched repos.
 - Record snapshot in `loop-kit/<profile>-state.md`.
 
 ### Phase 0b — Ticket ack
 
-- Jira: transition to **In Progress** (Atlassian MCP or `acli`).
+- Jira: transition to **In Progress** (Atlassian MCP or `jira-cli`).
 - Ops: PagerDuty incident note with investigation start.
 
 ### Phase 1 — Plan
@@ -116,7 +118,7 @@ Delegate: [`loop-verifier`](../loop-verifier/SKILL.md)
 .cursor/skills/agentic-loop/scripts/parse-jacoco.sh <repo-path> <ratio>
 ```
 
-- Profile E2E script if defined (e.g. my-service local E2E).
+- Profile E2E script if defined (e.g. cell-health local E2E).
 - Diff coverage: new/changed production lines need tests (delta gate in GATES.md).
 
 ### Phase 5 — Code review
@@ -130,7 +132,7 @@ Delegate: [`loop-verifier`](../loop-verifier/SKILL.md)
 5. Pass 2: Bugbot (inject registry; do not re-raise known themes)
 6. Pass 3 (routed by `pr_type`):
    - **java-only:** `java-springboot-standards` + ArchUnit + SOLID + `service-quality-drill`
-   - **infra-only:** `terraform-standards` + observability wiki; **no** JaCoCo/gradle
+   - **infra-only:** `cba-terraform-standards` + observability wiki; **no** JaCoCo/gradle
    - **mixed:** Java segment + infra segment; `Infra` / `Cross-cutting` categories
 7. **Synthesis:** merge passes → registry suppress → **net-new findings table** + optional **Already raised** appendix + `net_new_count` / `suppressed_count` + verdict
 
@@ -155,19 +157,56 @@ Resolve repo: profile `repos[0]`, `--repo`, or `gh pr view --json headRepository
 - Jira comment: summary, test names, commit SHA, PR link, AC map.
 - Script: `.cursor/skills/agentic-loop/scripts/jira-close-loop.sh <KEY> <PR-url> <SHA> [tests]`
 
-### Phase 9 — Wiki + compound
+### Phase 9 — Close-the-loop + self-improvement
 
-- Append `docs/wiki/log.md`; refresh `current-status.md`.
-- `knowledge-graph update <repo>` for changed repos.
-- `/ce-compound` when durable learnings exist.
+**9a Wiki:** Append feature-outcome line to `docs/wiki/log.md`; refresh `current-status.md`.
+
+**9b Graphify:** `graphify update <repo>` for changed repos.
+
+**9c Compound:** `/ce-compound` → human-facing wiki only (no agent skill/rule mutation).
+
+**9d Self-improvement** (mirror orchestrator SSOT — see [`.cursor/agents/agentic-loop-orchestrator.md`](../../agents/agentic-loop-orchestrator.md) Phase 9):
+
+<!-- PHASE-9D-TRANSITIONS:verbatim:start — do not edit in mirrors -->
+| Step | Action | Transition |
+|------|--------|------------|
+| 9a | wiki log + current-status | always |
+| 9b | graphify update | always |
+| 9c | ce-compound | always |
+| 9d-eligible | check L2/L3 + `self_improvement` | skip → end |
+| 9d-extract | loop-self-improvement | `NO_LEARNINGS` → end |
+| 9d-preflight | `scripts/loop_9d_preflight.sh` | fail closed; run before validate **and** before apply |
+| 9d-validate | apply script, no approve | `PENDING_APPROVAL` → STOP |
+| 9d-gate | present summary table | **STOP — same-turn approve forbidden** |
+| 9d-apply | user approve → `approve` | `APPLY_SUCCESS` / `IDEMPOTENT_SKIP` |
+| 9d-promo | promotion contract if any | after learning applied |
+<!-- PHASE-9D-TRANSITIONS:verbatim:end -->
+
+1. Invoke [`loop-self-improvement`](../loop-self-improvement/SKILL.md) → TOON contract + rationale.
+2. **Preflight:** `scripts/loop_9d_preflight.sh` → must print `loop_9d_preflight: ok`.
+3. Validate: `apply-loop-learning.sh --contract ...-learning.json` (no `approve`) → `PENDING_APPROVAL`.
+4. Present `docs/loop-learnings/staging/<JIRA>-<UTC-ts>-summary.md`; **STOP** for human.
+5. **Preflight again** (same script).
+6. On user approve: `apply-loop-learning.sh ... approve` → `loop/skill-update-*` branch + canonical 9d run-log line.
+7. If `-promotion.json`: stage after step 6 succeeds.
+
+### Run-log token (canonical — append via `update-loop-state.sh`)
+
+```text
+9d-preflight: ok | 9d: PENDING_APPROVAL → APPLY_SUCCESS | staging=<path> | branch=<name>
+```
+
+If coverage allowlist active, append `| allowlist=<line>:<reason>:<YYYY-MM-DD>` on the same row.
+
+See [`loop-kit/contracts/README.md`](../../../loop-kit/contracts/README.md) and [`GATES.md`](../../../loop-kit/GATES.md) Phase 9d gates.
 
 ## Ops-incident profile
 
 See [`.cursor/skills/ops-incident-loop/SKILL.md`](../ops-incident-loop/SKILL.md).
 
 - Default L1: phases 0, 1, 2 only.
-- MCP: Datadog, PagerDuty, Glean, knowledge-graph `observability__` slice.
-- Fix scope → `--handoff my-service` (or repo profile) with `--from-state`.
+- MCP: Datadog, PagerDuty, Glean, graphify `ddog__` slice.
+- Fix scope → `--handoff cell-health` (or repo profile) with `--from-state`.
 
 ## Failure Router (recommend only)
 
@@ -202,7 +241,7 @@ See [`.cursor/skills/ops-incident-loop/SKILL.md`](../ops-incident-loop/SKILL.md)
 
 ## See also
 
-- [`your-domain-skill`](../your-domain-skill/SKILL.md) — your service Phase 0 extension
+- [`cell-health-mvp`](../cell-health-mvp/SKILL.md) — Cell Health Phase 0 extension
 - [`pr-code-review.mdc`](../../rules/pr-code-review.mdc) — Phase 5 when `--pr` or PR URL
 - [`service-quality-drill.mdc`](../../rules/service-quality-drill.mdc)
-- [`loop-kit/patterns/feature-loop-example.md`](../../../loop-kit/patterns/feature-loop-example.md)
+- [`loop-kit/patterns/cell-health-feature-loop.md`](../../../loop-kit/patterns/cell-health-feature-loop.md)

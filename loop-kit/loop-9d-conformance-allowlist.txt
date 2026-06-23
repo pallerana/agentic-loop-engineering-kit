@@ -1,0 +1,3 @@
+# check_id | reason | expires
+# Example (expiry mandatory when suppressing):
+# runbook_parity | temporary mirror drift | 2026-07-01

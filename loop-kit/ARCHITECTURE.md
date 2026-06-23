@@ -15,3 +15,21 @@ Canonical architecture documentation lives in the repository [README.md](../READ
 ## Phase reference
 
 See [README.md — Phase reference (0–9)](../README.md#phase-reference-09) for per-phase skills, agents, and rules.
+
+<!-- EXPORT:architecture-body:start -->
+# Architecture deep-dive
+
+## Layers
+
+1. **Slash command** `/agentic-loop` — plan-mode-first entry
+2. **Orchestrator** `agentic-loop-orchestrator` — phase gates
+3. **Runbook** `agentic-loop/SKILL.md` — phases 0–9 + 9d
+4. **Profiles** `loop-kit/profiles/*.yaml`
+5. **Phase 9d control plane** — preflight, conformance, coverage, apply engine
+
+## Phase 9d
+
+Self-improvement uses TOON contracts under `docs/loop-learnings/` (consumer) with schema in `loop-kit/contracts/`.
+
+Local preflight is the primary gate; optional CI mirror via `loop-9d-checks.yml`.
+<!-- EXPORT:architecture-body:end -->

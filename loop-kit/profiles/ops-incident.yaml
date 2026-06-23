@@ -5,21 +5,24 @@ context_skill: ops-incident-loop
 context_sources:
   - datadog_mcp
   - pagerduty_mcp
-  - knowledge-graph
+  - graphify
   - wiki:ops-and-oncall.md
   - wiki:observability-ddog.md
   - glean:codebase-context
 default_mode: L1
 phases_enabled: [0, 1, 2]
 phases_l2: [0, 0b, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-handoff_profile: my-service
+handoff_profile: cell-health
 ship: none
 human_gates: always
+pattern_doc: loop-kit/patterns/ops-incident-patterns.md
+known_quirks: []
+failure_history: []
+ac_test_map: {}
+self_improvement: true
+skill_update_min_runs: 2
 mcp:
   - datadog
   - pagerduty
   - glean
   - github
-
-rules:
-  - terraform-standards.mdc
