@@ -27,7 +27,7 @@ Source: [jabrena/cursor-rules-java](https://github.com/jabrena/cursor-rules-java
 - Assert exceptions with `assertThatThrownBy` or `assertThrows`.
 - No test logic in production code (`if (isTest)` forbidden).
 
-## CDP
+## Agent loop
 
 - Every Copilot/CodeQL fix cites a **named test** in the PR thread reply.
 - Test matrix IDs (Phase 1) should map to test method names in close-the-loop Jira comment.

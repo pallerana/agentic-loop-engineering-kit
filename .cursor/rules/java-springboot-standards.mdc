@@ -355,11 +355,11 @@ public class RestClientConfig {
 }
 
 // Record-based config (preferred over @Value fields)
-@ConfigurationProperties(prefix = "cdp.health")
+@ConfigurationProperties(prefix = "app.health")
 public record HealthConfig(int aggregatorTimeoutMs, String centralBaseUrl) { }
 
 // GOOD - yaml drives @Scheduled; constant drives @DefaultValue only
-@Scheduled(fixedDelayString = "${cdp.health.publisher.heartbeat-interval-ms:15000}")
+@Scheduled(fixedDelayString = "${app.health.publisher.heartbeat-interval-ms:15000}")
 public void publishHeartbeat() { ... }
 
 public record PublisherProperties(
@@ -802,7 +802,7 @@ Do not reintroduce them.
 | 5 | Read config via method-param `@Value` for related settings | Bind a `@Validated @ConfigurationProperties` **record** with `@DefaultValue` + `@Positive` | code review |
 | 6 | Initialize constant path lists with `new ArrayList<>(Arrays.asList(...))` | Use immutable `List.of(...)` | code review |
 | 7 | Expose `/actuator/**` (incl. `/actuator/prometheus`) unauthenticated | Permit only `/actuator/health/**` + `/actuator/info`; keep metrics authenticated | code review |
-| 8 | Hardcode the API version in `OpenApiConfig` | Externalize to `cdp.api.version` in `application.yml` and inject via `@Value` | code review |
+| 8 | Hardcode the API version in `OpenApiConfig` | Externalize to `app.api.version` in `application.yml` and inject via `@Value` | code review |
 | 9 | Build error responses as bare strings or per-handler maps | Route every handler through `ExceptionUtils.buildErrorResponse(...)` returning `ApiErrorResponseDTO` with i18n keys from `ErrorMessageConstants` | code review |
 | 10 | Leak exception messages / resource paths to clients | Return only generic i18n messages; log details server-side | code review |
 | 11 | Drop duplicate validation keys silently (`(a,b) -> a`) | Merge by concatenation (`a + "; " + b`) | code review |
@@ -810,7 +810,7 @@ Do not reintroduce them.
 | 13 | `new RecordDTO(...)` with many args in services/mappers | MapStruct `@Mapping` variant methods or dedicated mapper | code review |
 | 14 | Inline package names in signatures (`com.example.app...HealthStatus`) | Normal imports | code review |
 | 15 | Short injected names (`mapper`, `service`) | Descriptive names matching type (`cellHealthEventMapper`) | code review |
-| 16 | Hardcoded `@Scheduled(fixedDelayString = "15000")` | Property placeholder `${cdp...}` + yaml + constant default | code review |
+| 16 | Hardcoded `@Scheduled(fixedDelayString = "15000")` | Property placeholder `${app...}` + yaml + constant default | code review |
 | 17 | Hardcoded path strings in controllers (`"/events"`, `"/stream"`) | `ApiConstants` segments | code review |
 | 18 | String-matching HTTP codes in exception messages (`contains("429")`) | `HttpStatus` / SDK `getStatusCode()` | code review |
 | 19 | Stub `IHealthProbe` bean that throws on use | Factory that builds real probe instances (`PeerProbeFactory`) | code review |
@@ -833,7 +833,7 @@ Do not reintroduce them.
 
 ### Enforcement mechanism
 
-- `src/test/java/com/gm/cdp/architecture/ArchitectureRulesTest.java` — ArchUnit rules above.
+- `src/test/java/com/example/app/architecture/ArchitectureRulesTest.java` — ArchUnit rules above.
 - `build.gradle.kts` — JaCoCo measures `configuration` + `dto` packages (0.80 line gate); Lombok-generated
   members are excluded via `lombok.config` (`lombok.addLombokGeneratedAnnotation = true`).
 - Keep demo/scaffold controllers and services **out** of the repo; they are an anti-pattern factory.

@@ -23,7 +23,7 @@ Source: [jabrena/cursor-rules-java](https://github.com/jabrena/cursor-rules-java
 
 ## Agentic Loop alignment
 
-- Follow existing repo patterns (`my-service-aggregator`, `cdp-your-service-api-java`).
+- Follow existing repo patterns (`my-service-api`, `your-service-api`).
 - Integration tests prove **wiring + contract**, not every branch (unit tests cover branches).
 - JaCoCo measured packages still apply — integration tests count toward line ratio.
 
