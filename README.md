@@ -4,6 +4,22 @@ Plan-mode-first Loop Engineering OS for Java/Spring Boot monorepos.
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 
+## Contents
+
+- [What it is](#what-it-is) · [Quick start](#quick-start) · [Installation](#installation)
+- [Companion setup](#recommended-companion-setup-efficient-agent-behaviour) (LLM-wiki, graphify)
+- [Maturity modes](#maturity-modes-l1--l2--l3-push) (L1 / L2 / L3-push)
+- [Validate setup](#validate-your-setup) (loop-audit)
+- [**Phase reference (0–9)**](#phase-reference-09) — skills, agents, rules per phase
+- [Architecture](#architecture) — **7 Mermaid diagrams**
+  1. [System layers](#1-system-layers-birds-eye)
+  2. [Invocation routing](#2-invocation-routing)
+  3. [Phase machine](#3-phase-machine-feature-profiles)
+  4. [Phase 5 branch](#4-phase-5-branch---pr-vs-normal)
+  5. [Profile model](#5-profile-model)
+  6. [Maker/checker split](#6-makerchecker-split-roles)
+  7. [Failure Router](#7-failure-router-recommend-only)
+
 ## What it is
 
 - **Slash command** `/agentic-loop` — plan-mode-first; phases 0–9; **L1 default** (Phase 0→2, report-only)
@@ -137,11 +153,155 @@ Reference: [loop-engineering](https://github.com/cobusgreyling/loop-engineering)
 
 | Goal | Command |
 |------|---------|
-| Help | /agentic-loop --help |
-| L1 plan | /agentic-loop --profile springboot-default --repo services/api PROJ-123 |
-| PR review | /agentic-loop --mode L1 --pr 42 |
-| Ops | /agentic-loop --profile ops-incident --pagerduty INC-ABC |
+| Help | `/agentic-loop --help` |
+| L1 plan | `/agentic-loop --profile springboot-default --repo services/api PROJ-123` |
+| PR review | `/agentic-loop --mode L1 --pr 42` |
+| Ops | `/agentic-loop --profile ops-incident --pagerduty INC-ABC` |
+| Resume ship | `/agentic-loop --profile springboot-default --phase 6 --pr 42` |
+| Thread hygiene | `/agentic-loop --profile springboot-default --phase 7 --pr 42` |
 
+---
+
+## Phase reference (0–9)
+
+Each phase is executed by the **`agentic-loop-orchestrator`** agent in **Plan mode**. The orchestrator delegates to skills, external Compound Engineering plugins, and Cursor rules — it never implements code itself.
+
+| Phase | Name | Summary | Agent / skill | Rules applied | Gate / stop |
+|-------|------|---------|---------------|---------------|-------------|
+| **0** | Context sync | Load wiki, Jira, knowledge graph, profile context; snapshot state | [`loop-triage`](.cursor/skills/loop-triage/SKILL.md) · [`agentic-loop-runbook`](.cursor/skills/agentic-loop/SKILL.md) | — (optional: consumer domain skill) | Wiki + ticket context present |
+| **0b** | Ticket ack | Jira → In Progress; PagerDuty investigation note (ops) | Orchestrator · Atlassian / PagerDuty MCP | — | Ticket acknowledged |
+| **1** | Plan | Feature: `/ce-plan` + mandatory test matrix. Ops: hypothesis in STATE | `ce-plan` (Compound Engineering) | `jabrena-302`, `jabrena-311`, `jabrena-312` | Test matrix drafted |
+| **2** | Plan review | `ce-testing-reviewer` on matrix; ops evidence check | `ce-testing-reviewer` | `jabrena-302/311/312` | **L1 STOP** — human approves before Phase 3 |
+| **3** | Implement | `/ce-work` in target repo; match standards | `ce-work` | `java-springboot-standards.mdc`, `service-quality-drill.mdc` | Human approved plan |
+| **4** | Verify | Build, JaCoCo, diff coverage; maker/checker split | [`loop-verifier`](.cursor/agents/loop-verifier.md) · [`loop-verifier` skill](.cursor/skills/loop-verifier/SKILL.md) | `service-quality-drill.mdc`, `jabrena-*` | Build green; JaCoCo ≥ profile ratio |
+| **5** | Code review | PR path: `pr-code-review.mdc`. Else: `ce-code-review` vs `main` | `ce-code-review` · Bugbot · [`pr-code-review.mdc`](.cursor/rules/pr-code-review.mdc) | `java-springboot-standards`, `service-quality-drill`, `terraform-standards` (by `pr_type`) | No open P0/P1 on net-new findings |
+| **6** | Ship | Squash, push feature branch, PR, CI babysit (max 3) | `commit-push-pr` + `babysit` · [`loop-budget`](.cursor/skills/loop-budget/SKILL.md) | `service-quality-drill.mdc` | **L3-push** + human ship approval |
+| **7** | PR hygiene | Copilot/CodeQL threads: fix → test → reply → resolve | `ce-resolve-pr-feedback` | `service-quality-drill.mdc` | All review threads resolved |
+| **8** | Close-the-loop | Jira comment: summary, tests, SHA, PR link, AC map | `jira-close-loop.sh` | — | Jira updated |
+| **9** | Wiki + compound | Append wiki log; refresh status; update knowledge graph | `ce-compound` · [LLM-wiki](https://github.com/Ss1024sS/LLM-wiki) · [graphify](https://github.com/safishamsi/graphify) | — | Durable learnings written back |
+
+### Phase 0 — Context sync (detail)
+
+**Purpose:** Eliminate cold-start amnesia. The agent reads durable state before planning.
+
+**Actions:**
+- Read `docs/wiki/index.md`, `current-status.md`, `log.md` ([LLM-wiki](https://github.com/Ss1024sS/LLM-wiki))
+- Run `knowledge-graph query "<topic>"` on touched repos ([graphify](https://github.com/safishamsi/graphify))
+- Fetch Jira / Confluence via Atlassian MCP
+- Load profile `context_skill` if defined
+- Write snapshot to `loop-kit/<profile>-state.md`
+
+**Delegated to:** [`loop-triage`](.cursor/skills/loop-triage/SKILL.md)
+
+### Phase 0b — Ticket ack (detail)
+
+**Purpose:** Signal work has started on the tracked ticket.
+
+**Actions:** Jira transition to In Progress; PagerDuty incident note for ops runs.
+
+### Phase 1 — Plan (detail)
+
+**Purpose:** Produce an implementation plan with an explicit **test matrix** (required gate in [`loop-kit/GATES.md`](loop-kit/GATES.md)).
+
+**Delegated to:** `ce-plan` (Compound Engineering)
+
+**Rules:** [`jabrena-302-java-testing-fundamentals.mdc`](.cursor/rules/external/jabrena-302-java-testing-fundamentals.mdc), [`jabrena-311`](.cursor/rules/external/jabrena-311-spring-boot-slice-testing.mdc), [`jabrena-312`](.cursor/rules/external/jabrena-312-spring-boot-integration-testing.mdc) — naming, slice vs integration test design.
+
+**Ops variant:** Hypothesis doc in `STATE.md` (symptom, timeline, suspects, next Datadog/PagerDuty queries).
+
+### Phase 2 — Plan review (detail)
+
+**Purpose:** Independent review of the test matrix and plan quality before any code changes.
+
+**Delegated to:** `ce-testing-reviewer`
+
+**Human gate:** Default **L1 stops here**. User must approve (e.g. “proceed with implementation”) before Phase 3.
+
+### Phase 3 — Implement (detail)
+
+**Purpose:** Execute the approved plan in the target repo.
+
+**Delegated to:** `ce-work`
+
+**Rules:**
+- [`java-springboot-standards.mdc`](.cursor/rules/java-springboot-standards.mdc) — layering, ArchUnit, Spring Boot 4 patterns
+- [`service-quality-drill.mdc`](.cursor/rules/service-quality-drill.mdc) — build discipline, regression tests per thread
+
+**Skipped** in `ops-incident` L1 (investigate-only).
+
+### Phase 4 — Verify (detail)
+
+**Purpose:** Maker/checker verification — a **different** agent/skill than the implementer.
+
+**Delegated to:** [`loop-verifier`](.cursor/agents/loop-verifier.md) agent + [`loop-verifier`](.cursor/skills/loop-verifier/SKILL.md) skill
+
+**Scripts:**
+```bash
+.cursor/skills/agentic-loop/scripts/gradle-build.sh <repo>
+.cursor/skills/agentic-loop/scripts/parse-jacoco.sh <repo> <ratio>
+```
+
+**Rules:** `service-quality-drill.mdc` (JaCoCo gate), `jabrena-*` (test coverage alignment)
+
+**Gate:** `./gradlew clean build` green; JaCoCo line ratio ≥ profile `jacoco_line_ratio` (default 0.80).
+
+### Phase 5 — Code review (detail)
+
+**Purpose:** Diff-only review with deduplication against existing PR threads.
+
+**Two paths** (see [Diagram 4](#4-phase-5-branch---pr-vs-normal) below):
+
+| Path | Trigger | Workflow |
+|------|---------|----------|
+| **PR review** | `--pr <n>` or GitHub PR URL | Full [`pr-code-review.mdc`](.cursor/rules/pr-code-review.mdc): Phase 0a–0f, Pass 1–3 by `pr_type`, synthesis table |
+| **Normal** | No `--pr` | `ce-code-review` vs `main`; fix P0/P1 before ship |
+
+**`pr_type` routing (Pass 3):**
+
+| `pr_type` | Pass 3 applies |
+|-----------|----------------|
+| `java-only` | `java-springboot-standards` + ArchUnit + `service-quality-drill` |
+| `infra-only` | `terraform-standards` + observability checks; no JaCoCo |
+| `mixed` | Segmented Java + infra; `Cross-cutting` for TF↔Java links |
+
+**Default for `--pr`:** L1 report-only (`net_new_count` / `suppressed_count` table; no auto-fix).
+
+**Phase 7 + `--pr`** = thread hygiene only — not a substitute for Phase 5.
+
+### Phase 6 — Ship (detail)
+
+**Purpose:** Push feature branch, open/update PR, babysit CI.
+
+**Delegated to:** `commit-push-pr` + `babysit` skills; budget check via [`loop-budget`](.cursor/skills/loop-budget/SKILL.md)
+
+**Script:** `gh-pr-checks-watch.sh` — max **3** remote CI cycles per PR
+
+**Rules:** `service-quality-drill.mdc` (required checks: lint, build-and-test, Trivy, dependency-review, gitleaks, CodeQL)
+
+**Requires:** `--mode L3-push` + explicit human “push” approval. Never merges to `main`.
+
+### Phase 7 — PR hygiene (detail)
+
+**Purpose:** Close Copilot/CodeQL review threads after green CI.
+
+**Delegated to:** `ce-resolve-pr-feedback` — implement fix → cite test → reply → resolve thread.
+
+### Phase 8 — Close-the-loop (detail)
+
+**Purpose:** Link code, tests, and ticket in one durable Jira comment.
+
+**Script:** `jira-close-loop.sh <JIRA-KEY> <PR-url> <SHA> [test-names]`
+
+### Phase 9 — Wiki + compound (detail)
+
+**Purpose:** Write durable learnings back so the next session starts warm.
+
+**Actions:**
+- Append `docs/wiki/log.md`; refresh `current-status.md` (LLM-wiki)
+- `knowledge-graph update <repo>` (graphify)
+- `/ce-compound` when architectural learnings exist
+
+---
 ## Full HELP
 
 ```
@@ -270,7 +430,11 @@ agentic-loop-engineering-kit/
 
 ## Architecture
 
-### Diagram 1 — System layers
+Seven diagrams describe how the kit fits together. Read top-to-bottom: entry → routing → phase machine → PR branch → profiles → roles → failure handling.
+
+### 1. System layers (bird's-eye)
+
+Shows every layer from slash command to MCP connectors. The orchestrator stays in Plan mode; all implementation is delegated.
 
 ```mermaid
 flowchart TB
@@ -327,7 +491,18 @@ flowchart TB
   SCRIPTS --> HOOKS
 ```
 
-### Diagram 2 — Invocation routing
+| Layer | Artifacts |
+|-------|-----------|
+| Entry | `.cursor/commands/agentic-loop.md` |
+| Orchestration | `.cursor/agents/agentic-loop-orchestrator.md`, `.cursor/skills/agentic-loop/SKILL.md` |
+| Config | `loop-kit/profiles/*.yaml`, `loop-kit/GATES.md`, `loop-budget.md` |
+| State | `STATE.md`, `loop-kit/*-state.md`, `loop-run-log.md` |
+| Delegates | `loop-triage`, `loop-verifier`, `loop-budget`, Compound Engineering plugins |
+| Tooling | `agentic-loop/scripts/*`, `.cursor/hooks/*.sh` |
+
+### 2. Invocation routing
+
+How flags and targets determine which phases run and which mode applies.
 
 ```mermaid
 flowchart LR
@@ -348,7 +523,17 @@ flowchart LR
   MODE -->|L3-push| L3["Push and CI babysit"]
 ```
 
-### Diagram 3 — Phase machine
+| Target | Route |
+|--------|-------|
+| `<JIRA-KEY>` | Full feature loop; mode caps depth |
+| `--pr` / PR URL | Jump to Phase 5 (`pr-code-review.mdc`) |
+| `--phase N` | Resume (orchestrator validates prerequisites) |
+| `--pagerduty` / `--datadog-monitor` | `ops-incident` profile, L1 default |
+| `--handoff` + `--from-state` | Ops → feature; preload STATE |
+
+### 3. Phase machine (feature profiles)
+
+Full 0–9 sequence with human gates. L1 stops after Phase 2. Failure Router edges are recommend-only (dashed).
 
 ```mermaid
 flowchart TD
@@ -381,7 +566,15 @@ flowchart TD
   P6RUN -.->|CI red| FR
 ```
 
-### Diagram 4 — Phase 5 PR branch
+| Gate | When | L1 behaviour |
+|------|------|--------------|
+| After Phase 2 | Plan approved? | **STOP** — no code |
+| Before Phase 4 | Implementation approved? | N/A in L1 |
+| Before Phase 6 | Ship approved? | N/A unless L3-push |
+
+### 4. Phase 5 branch (--pr vs normal)
+
+Phase 5 splits on whether a PR number or URL was provided.
 
 ```mermaid
 flowchart TD
@@ -402,7 +595,18 @@ flowchart TD
   SYNTH --> VERDICT["Verdict L1 report only default"]
 ```
 
-### Diagram 5 — Profile model
+| Step | Skill / rule |
+|------|----------------|
+| 0a–0d | PR metadata, Jira, scenario matrix, thread ingestion |
+| 0e | `pr_type` from `gh pr diff --name-only` |
+| 0f | Existing-feedback registry (dedup) |
+| Pass 1–2 | `ce-code-review`, Bugbot |
+| Pass 3 | `java-springboot-standards` / `terraform-standards` / `service-quality-drill` by `pr_type` |
+| Synthesis | `net_new_count`, `suppressed_count`, verdict table |
+
+### 5. Profile model
+
+YAML profiles compose behaviour. Extend `springboot-default` for your services.
 
 ```mermaid
 flowchart LR
@@ -416,7 +620,15 @@ flowchart LR
   profiles --> REPOS["repos jacoco phases_enabled ship default_mode L1"]
 ```
 
-### Diagram 6 — Maker checker split
+| Profile | `default_mode` | Phases | Key fields |
+|---------|----------------|--------|------------|
+| `springboot-default` | L1 | 0–9 | `jacoco_line_ratio: 0.80`, `rules:` (6 Java/Spring rules) |
+| `ops-incident` | L1 | 0–2 (L2+: 0–9) | Datadog/PagerDuty MCP, `terraform-standards` on handoff |
+| `my-service.yaml` | inherits | extends parent | `repos`, custom `context_skill` |
+
+### 6. Maker/checker split (roles)
+
+The orchestrator never implements and verifies with the same model instance.
 
 ```mermaid
 flowchart TB
@@ -439,7 +651,14 @@ flowchart TB
   IMPL -.-> CODREV
 ```
 
-### Diagram 7 — Failure Router
+| Role | Must not also be |
+|------|------------------|
+| `ce-work` (implement) | `loop-verifier` (verify) on same change |
+| `ce-work` (implement) | `ce-code-review` / `pr-code-review` on same change |
+
+### 7. Failure Router (recommend-only)
+
+Classifies failures and **recommends** the next phase. Never auto-re-dispatch — human confirms in chat.
 
 ```mermaid
 flowchart LR
@@ -462,6 +681,16 @@ flowchart LR
   INBOX --> WAIT
 ```
 
+| Signal | Recommend | Typical skill |
+|--------|-----------|---------------|
+| JaCoCo / delta coverage fail | Phase 4 → 3 (add tests) | `loop-verifier` → `ce-work` |
+| Local build fail | Phase 3 | `ce-work` |
+| Remote CI fail (≤3 cycles) | Phase 6 babysit | `gh-pr-checks-watch.sh` |
+| Remote CI fail (>3) | Phase 1 + CI logs in STATE | `ce-plan` |
+| AC / plan gap | Phase 1 | `ce-plan` |
+| Infra flake / secrets | `STATE.md` human inbox | — |
+
+---
 ## Profiles
 
 - springboot-default — Gradle Java/Spring Boot; requires --repo
