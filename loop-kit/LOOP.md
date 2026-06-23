@@ -16,9 +16,9 @@ Loop Engineering OS for your monorepo repos and ops incidents.
 |---------|-------|--------|-------|
 | `my-service` | aggregator, central | 1.00 | E2E, Event Hub, Cosmos |
 | `your-service` | assignments API | 0.80 | |
-| `your-service` | http cell router | 0.80 | |
-| `your-service` | cell migrator | 0.80 | |
-| `your-service` | cell discovery | 0.80 | |
+| `your-service` | HTTP API gateway | 0.80 | |
+| `your-service` | data migrator | 0.80 | |
+| `your-service` | service discovery | 0.80 | |
 | `springboot-default` | any `--repo` | 0.80 | read `build.gradle.kts` |
 | `ops-incident` | cross-cutting | n/a | investigate; handoff for fixes |
 

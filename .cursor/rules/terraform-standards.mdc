@@ -6,7 +6,7 @@ alwaysApply: false
 
 # CBA Terraform standards
 
-Applies to `infra//` and cell infrastructure Terraform. **Agent loop never runs `terraform apply`.**
+Applies to `infra//` and platform infrastructure Terraform. **Agent loop never runs `terraform apply`.**
 
 ## Patterns (from infra/)
 
