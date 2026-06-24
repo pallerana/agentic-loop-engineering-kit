@@ -45,7 +45,7 @@ FAILURE ROUTER (recommend only)
   coverage→4→3 · local CI→3 · remote CI→6 (max 3)→1 · plan gap→1 · flake→STATE
 
 EXAMPLES
-  /agentic-loop --profile springboot-default --repo services/api PROJ-123
+  /agentic-loop --profile springboot-default --repo backend-repo PROJ-123
   /agentic-loop --mode L1 --pr https://github.com/<org>/<repo>/pull/42
   /agentic-loop --profile ops-incident --pagerduty INC-ABC
   /agentic-loop --profile springboot-default --phase 7 --pr 42
