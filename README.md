@@ -20,6 +20,12 @@ Plan-mode-first Loop Engineering OS for Java/Spring Boot monorepos.
   6. [Maker/checker split](#6-makerchecker-split-roles)
   7. [Failure Router](#7-failure-router-recommend-only)
 
+
+<!-- EXPORT:toc:start -->
+- [Phase 9d (self-improvement)](#phase-9d-self-improvement) — inside phase reference
+- [Recommended workspace layout](#recommended-workspace-layout) — single `.cursor` at workspace root
+<!-- EXPORT:toc:end -->
+
 ## What it is
 
 - **Slash command** `/agentic-loop` — plan-mode-first; phases 0–9; **L1 default** (Phase 0→2, report-only)
@@ -32,7 +38,7 @@ Plan-mode-first Loop Engineering OS for Java/Spring Boot monorepos.
 
 ```bash
 git clone https://github.com/pallerana/agentic-loop-engineering-kit.git
-cd your-monorepo
+cd my-platform
 cp -R agentic-loop-engineering-kit/loop-kit ./loop-kit
 # merge agentic-loop-engineering-kit/.cursor into your .cursor/
 cp agentic-loop-engineering-kit/LOOP.md agentic-loop-engineering-kit/STATE.md .
@@ -53,6 +59,85 @@ npx @cobusgreyling/loop-audit . --suggest
 7. **Validate** — `npx @cobusgreyling/loop-audit . --suggest` (see below).
 8. **Recommended** — bootstrap [LLM-wiki](https://github.com/Ss1024sS/LLM-wiki) and [graphify](https://github.com/safishamsi/graphify) for efficient agent behaviour.
 
+
+
+<!-- EXPORT:installation-toc:start -->
+- [Recommended workspace layout](#recommended-workspace-layout) — single `.cursor` at workspace root (avoid per-repo duplication)
+<!-- EXPORT:installation-toc:end -->
+
+
+<!-- EXPORT:workspace-setup:start -->
+### Recommended workspace layout
+
+Use **one Cursor workspace root** with a **single** `.cursor/` tree. Do **not** copy `.cursor/` into each child repo.
+
+**Anti-pattern (do not):**
+
+```
+frontend-app/.cursor/
+backend-repo/.cursor/
+infra/.cursor/
+```
+
+Duplicated agents, skills, and hooks drift; `--repo` paths disagree with `CURSOR_PROJECT_DIR`.
+
+**Recommended:**
+
+Open **`my-platform/`** as the workspace. Child folders are repos only — no nested `.cursor/`.
+
+```
+my-platform/                          # Cursor workspace root — open THIS folder
+├── .cursor/                          # single loop OS (merged from this kit)
+│   ├── commands/agentic-loop.md
+│   ├── agents/
+│   ├── skills/
+│   ├── rules/
+│   └── hooks.json
+├── loop-kit/
+├── LOOP.md
+├── STATE.md
+├── loop-budget.md
+├── loop-run-log.md
+├── docs/wiki/                        # LLM-wiki (recommended)
+├── frontend-app/                     # UI (no .cursor/)
+├── backend-repo/                     # Java/Spring Gradle
+└── infra/                            # Terraform / platform IaC
+```
+
+```mermaid
+flowchart TB
+  subgraph workspace [my-platform workspace root]
+    CURSOR[".cursor/ single loop OS"]
+    KIT["loop-kit/ profiles GATES contracts"]
+    ROOT["LOOP.md STATE.md loop-budget.md"]
+    WIKI["docs/wiki/ LLM-wiki"]
+    FE["frontend-app/"]
+    BE["backend-repo/"]
+    INF["infra/"]
+  end
+  CURSOR --> KIT
+  workspace --> FE
+  workspace --> BE
+  workspace --> INF
+```
+
+**Setup:**
+
+1. Create `my-platform/`; clone `frontend-app`, `backend-repo`, and `infra` as siblings.
+2. Merge this kit's `.cursor/`, `loop-kit/`, and root loop files **once** at `my-platform/`.
+3. Open Cursor on `my-platform/` (not a child repo).
+4. Add `loop-kit/profiles/my-service.yaml` with `repos: [backend-repo]`.
+5. Run `npx @cobusgreyling/loop-audit .` from the workspace root.
+
+**Examples:**
+
+```bash
+/agentic-loop --profile springboot-default --repo backend-repo PROJ-123
+/agentic-loop --profile springboot-default --repo infra --mode L1 --pr 42
+```
+
+**graphify:** `graphify update frontend-app`, `graphify update backend-repo`, `graphify update infra`; optional merged graph at `my-platform/graphify-out/`.
+<!-- EXPORT:workspace-setup:end -->
 ## Recommended companion setup (efficient agent behaviour)
 
 This kit orchestrates **what** the agent does each phase. For **durable memory** and **fast codebase navigation**, bootstrap these two projects in the same monorepo:
@@ -63,7 +148,7 @@ Karpathy-style **wiki-first** knowledge: raw sources → compiled `docs/wiki/` �
 
 ```bash
 git clone https://github.com/Ss1024sS/LLM-wiki.git
-python3 LLM-wiki/scripts/bootstrap_knowledge_system.py /path/to/your-monorepo "Your Project"
+python3 LLM-wiki/scripts/bootstrap_knowledge_system.py /path/to/my-platform "Your Project"
 ```
 
 After bootstrap, Phase 0 reads `docs/wiki/index.md`, `current-status.md`, and `log.md`; Phase 9 writeback appends `log.md` and refreshes status. See [UNIVERSAL.md](https://github.com/Ss1024sS/LLM-wiki/blob/main/UNIVERSAL.md).
@@ -114,10 +199,10 @@ L3-push          →  push branch + babysit CI; human merges PR
 Examples:
 
 ```text
-/agentic-loop --profile springboot-default --repo services/api PROJ-123
-/agentic-loop --mode L1 --profile springboot-default --repo services/api PROJ-123
-/agentic-loop --mode L2 --profile springboot-default --repo services/api PROJ-123
-/agentic-loop --mode L3-push --profile springboot-default --repo services/api PROJ-123
+/agentic-loop --profile springboot-default --repo backend-repo PROJ-123
+/agentic-loop --mode L1 --profile springboot-default --repo backend-repo PROJ-123
+/agentic-loop --mode L2 --profile springboot-default --repo backend-repo PROJ-123
+/agentic-loop --mode L3-push --profile springboot-default --repo backend-repo PROJ-123
 ```
 
 ## Validate your setup
@@ -154,7 +239,7 @@ Reference: [loop-engineering](https://github.com/cobusgreyling/loop-engineering)
 | Goal | Command |
 |------|---------|
 | Help | `/agentic-loop --help` |
-| L1 plan | `/agentic-loop --profile springboot-default --repo services/api PROJ-123` |
+| L1 plan | `/agentic-loop --profile springboot-default --repo backend-repo PROJ-123` |
 | PR review | `/agentic-loop --mode L1 --pr 42` |
 | Ops | `/agentic-loop --profile ops-incident --pagerduty INC-ABC` |
 | Resume ship | `/agentic-loop --profile springboot-default --phase 6 --pr 42` |
@@ -301,6 +386,82 @@ Each phase is executed by the **`agentic-loop-orchestrator`** agent in **Plan mo
 - `knowledge-graph update <repo>` (graphify)
 - `/ce-compound` when architectural learnings exist
 
+
+<!-- EXPORT:phase-table-9d:start -->
+| **9d** | Self-improvement | TOON contract → apply engine; local preflight gate | [`loop-self-improvement`](.cursor/skills/loop-self-improvement/SKILL.md) · `apply-loop-learning.sh` | — | L2/L3 · `PENDING_APPROVAL` STOP |
+<!-- EXPORT:phase-table-9d:end -->
+
+
+<!-- EXPORT:phase-9d:start -->
+### Phase 9d (self-improvement)
+
+L2/L3 only. TOON contract → `apply-loop-learning.sh --contract`. See `loop-kit/contracts/README.md`.
+
+**Local preflight** (before validate and approve):
+
+```bash
+python3 -m venv .venv-loop-9d && .venv-loop-9d/bin/pip install -r scripts/requirements-loop-9d.txt
+export CURSOR_PROJECT_DIR="$(pwd)"
+./scripts/loop_9d_preflight.sh
+```
+
+**Run-log token:**
+
+```text
+9d-preflight: ok | 9d: PENDING_APPROVAL → APPLY_SUCCESS | staging=<path> | branch=<name>
+```
+<!-- EXPORT:phase-9d:end -->
+
+
+<!-- EXPORT:tools-table:start -->
+| Tool | Role |
+|------|------|
+| `loop_9d_preflight.sh` | Local 9d gate (venv auto-detect) |
+| `loop_9d_conformance_check.py` | Doc parity / verbatim blocks |
+| `loop_9d_coverage_check.py` | Apply-engine coverage gate |
+| `apply-loop-learning.sh` | TOON contract apply |
+| `loop-self-improvement` skill | Phase 9d extraction |
+| CE: `ce-doc-review`, `ce-debug`, `ce-compound-refresh` | Optional selective plugins |
+| LLM-wiki, graphify | Companion setup |
+| `npx @cobusgreyling/loop-audit` | Setup validation |
+<!-- EXPORT:tools-table:end -->
+
+
+<!-- EXPORT:diagram-9d-state:start -->
+```mermaid
+flowchart TD
+  preflight[9d_preflight] --> validate[validate PENDING_APPROVAL]
+  validate --> stop[Human STOP]
+  stop --> preflight2[preflight again]
+  preflight2 --> approve[approve APPLY_SUCCESS]
+```
+<!-- EXPORT:diagram-9d-state:end -->
+
+
+<!-- EXPORT:diagram-9d-control:start -->
+```mermaid
+flowchart LR
+  applyEngine[apply_loop_learning.py]
+  preflight[loop_9d_preflight.sh]
+  conformance[loop_9d_conformance_check]
+  coverage[loop_9d_coverage_check]
+  preflight --> conformance
+  preflight --> coverage
+  applyEngine --> coverage
+```
+<!-- EXPORT:diagram-9d-control:end -->
+
+
+<!-- EXPORT:diagram-export-boundary:start -->
+```mermaid
+flowchart TB
+  kit[agentic-loop-engineering-kit]
+  consumer[Consumer monorepo]
+  kit -->|copy loop-kit + .cursor| consumer
+  consumer -->|docs/loop-learnings runtime| consumer
+```
+<!-- EXPORT:diagram-export-boundary:end -->
+
 ---
 ## Full HELP
 
@@ -347,7 +508,7 @@ FAILURE ROUTER (recommend only)
   coverage→4→3 · local CI→3 · remote CI→6 (max 3)→1 · plan gap→1 · flake→STATE
 
 EXAMPLES
-  /agentic-loop --profile springboot-default --repo services/api PROJ-123
+  /agentic-loop --profile springboot-default --repo backend-repo PROJ-123
   /agentic-loop --mode L1 --pr https://github.com/<org>/<repo>/pull/42
   /agentic-loop --profile ops-incident --pagerduty INC-ABC
   /agentic-loop --profile springboot-default --phase 7 --pr 42
@@ -711,72 +872,20 @@ flowchart LR
 
 Apache-2.0 — see LICENSE.
 
-<!-- EXPORT:toc:start -->
 
-<!-- EXPORT:toc:end -->
 
-<!-- EXPORT:phase-9d:start -->
-### Phase 9d (self-improvement)
 
-L2/L3 only. TOON contract → `apply-loop-learning.sh --contract`. See `loop-kit/contracts/README.md`.
 
-**Local preflight** (before validate and approve):
 
-```bash
-python3 -m venv .venv-loop-9d && .venv-loop-9d/bin/pip install -r scripts/requirements-loop-9d.txt
-export CURSOR_PROJECT_DIR="$(pwd)"
-./scripts/loop_9d_preflight.sh
-```
 
-**Run-log token:**
 
-```text
-9d-preflight: ok | 9d: PENDING_APPROVAL → APPLY_SUCCESS | staging=<path> | branch=<name>
-```
-<!-- EXPORT:phase-9d:end -->
 
-<!-- EXPORT:tools-table:start -->
-| Tool | Role |
-|------|------|
-| `loop_9d_preflight.sh` | Local 9d gate (venv auto-detect) |
-| `loop_9d_conformance_check.py` | Doc parity / verbatim blocks |
-| `loop_9d_coverage_check.py` | Apply-engine coverage gate |
-| `apply-loop-learning.sh` | TOON contract apply |
-| `loop-self-improvement` skill | Phase 9d extraction |
-| CE: `ce-doc-review`, `ce-debug`, `ce-compound-refresh` | Optional selective plugins |
-| LLM-wiki, graphify | Companion setup |
-| `npx @cobusgreyling/loop-audit` | Setup validation |
-<!-- EXPORT:tools-table:end -->
 
-<!-- EXPORT:diagram-9d-state:start -->
-```mermaid
-flowchart TD
-  preflight[9d_preflight] --> validate[validate PENDING_APPROVAL]
-  validate --> stop[Human STOP]
-  stop --> preflight2[preflight again]
-  preflight2 --> approve[approve APPLY_SUCCESS]
-```
-<!-- EXPORT:diagram-9d-state:end -->
 
-<!-- EXPORT:diagram-9d-control:start -->
-```mermaid
-flowchart LR
-  applyEngine[apply_loop_learning.py]
-  preflight[loop_9d_preflight.sh]
-  conformance[loop_9d_conformance_check]
-  coverage[loop_9d_coverage_check]
-  preflight --> conformance
-  preflight --> coverage
-  applyEngine --> coverage
-```
-<!-- EXPORT:diagram-9d-control:end -->
 
-<!-- EXPORT:diagram-export-boundary:start -->
-```mermaid
-flowchart TB
-  kit[agentic-loop-engineering-kit]
-  consumer[Consumer monorepo]
-  kit -->|copy loop-kit + .cursor| consumer
-  consumer -->|docs/loop-learnings runtime| consumer
-```
-<!-- EXPORT:diagram-export-boundary:end -->
+
+
+
+
+
+
