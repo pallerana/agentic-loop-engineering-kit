@@ -21,9 +21,32 @@ Plan-mode-first Loop Engineering OS for Java/Spring Boot monorepos.
   7. [Failure Router](#7-failure-router-recommend-only)
 
 
+
+
+
+
+
+
+
+
 <!-- EXPORT:toc:start -->
-- [Phase 9d (self-improvement)](#phase-9d-self-improvement) — inside phase reference
-- [Recommended workspace layout](#recommended-workspace-layout) — single `.cursor` at workspace root
+- [Phase 9a — Wiki writeback](#phase-9a--wiki-writeback-detail)
+- [Phase 9b — Knowledge graph](#phase-9b--knowledge-graph-update-detail)
+- [Phase 9c — Compound (human wiki)](#phase-9c--compound-human-wiki-detail)
+- [Phase 9 — transition table](#phase-9--transition-table-detail)
+- [Phase 9d (self-improvement)](#phase-9d-self-improvement)
+- [Agents and skills catalog](#agents-and-skills-catalog)
+- **Kit skills and agents**
+  - [agentic-loop-orchestrator](#agent-agentic-loop-orchestrator)
+  - [loop-verifier](#agent-loop-verifier)
+  - [agentic-loop](#command-agentic-loop)
+  - [agentic-loop](#skill-agentic-loop)
+  - [agentic-loop](#skill-agentic-loop)
+  - [loop-budget](#skill-loop-budget)
+  - [loop-triage](#skill-loop-triage)
+  - [loop-verifier](#skill-loop-verifier)
+  - [ops-incident-loop](#skill-ops-incident-loop)
+  - [skills](#skill-skills)
 <!-- EXPORT:toc:end -->
 
 ## What it is
@@ -58,6 +81,22 @@ npx @cobusgreyling/loop-audit . --suggest
 6. **Consumer profile** — add `loop-kit/profiles/my-service.yaml` extending `springboot-default`.
 7. **Validate** — `npx @cobusgreyling/loop-audit . --suggest` (see below).
 8. **Recommended** — bootstrap [LLM-wiki](https://github.com/Ss1024sS/LLM-wiki) and [graphify](https://github.com/safishamsi/graphify) for efficient agent behaviour.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -387,6 +426,141 @@ Each phase is executed by the **`agentic-loop-orchestrator`** agent in **Plan mo
 - `/ce-compound` when architectural learnings exist
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- EXPORT:phase-table-9abc:start -->
+| **9a** | Wiki writeback | Append log; refresh `current-status.md` | [LLM-wiki](https://github.com/Ss1024sS/LLM-wiki) | — | Always after Phase 8 |
+| **9b** | Knowledge graph | `knowledge-graph update <repo>` per touched repo | [graphify](https://github.com/safishamsi/graphify) | — | Always |
+| **9c** | Compound (human wiki) | `/ce-compound` for architectural learnings — human-facing wiki only | `ce-compound` | — | Distinct from 9d skill mutation |
+<!-- EXPORT:phase-table-9abc:end -->
+
+
+<!-- EXPORT:phase-9-abc:start -->
+### Phase 9a — Wiki writeback (detail)
+
+**Purpose:** Persist durable session outcomes so the next run starts warm.
+
+**Actions:**
+- Append `docs/wiki/log.md` (date · topic · outcome)
+- Refresh `docs/wiki/current-status.md`
+- Follow [LLM-wiki](https://github.com/Ss1024sS/LLM-wiki) session protocol
+
+**Gate:** Always runs after Phase 8. Separate from the 9d approve-only log line.
+
+### Phase 9b — Knowledge graph update (detail)
+
+**Purpose:** Keep the codebase knowledge graph current for touched repos.
+
+**Actions:**
+- `knowledge-graph update <repo>` for each repo modified in the loop ([graphify](https://github.com/safishamsi/graphify))
+- Re-merge cross-repo graph if your workspace uses a merged graph at workspace root
+
+**Gate:** Always runs after 9a.
+
+### Phase 9c — Compound (human wiki) (detail)
+
+**Purpose:** Capture architectural learnings in human-readable wiki pages.
+
+**Actions:**
+- Invoke `/ce-compound` when the loop produced durable design or process insight
+- Write conclusions into `docs/wiki/` — **not** automated skill/rule mutation (that is 9d)
+
+**Delegated to:** `ce-compound` (Compound Engineering)
+
+**Gate:** Always runs after 9b. Distinct from Phase 9d self-improvement apply engine.
+<!-- EXPORT:phase-9-abc:end -->
+
+
+<!-- EXPORT:phase-9-transitions:start -->
+### Phase 9 — transition table (detail)
+
+Authoritative state machine. Mirrors `loop-kit/GATES.md` `PHASE-9D-TRANSITIONS:verbatim` block.
+
+**Human gate:** 9d self-improvement — after summary — no approve without user message.
+
+<!-- PHASE-9D-TRANSITIONS:verbatim:start — do not edit in mirrors -->
+| Step | Action | Transition |
+|------|--------|------------|
+| 9a | wiki log + current-status | always |
+| 9b | graphify update | always |
+| 9c | ce-compound | always |
+| 9d-eligible | check L2/L3 + `self_improvement` | skip → end |
+| 9d-extract | loop-self-improvement | `NO_LEARNINGS` → end |
+| 9d-preflight | `scripts/loop_9d_preflight.sh` | fail closed; run before validate **and** before apply |
+| 9d-validate | apply script, no approve | `PENDING_APPROVAL` → STOP |
+| 9d-gate | present summary table | **STOP — same-turn approve forbidden** |
+| 9d-apply | user approve → `approve` | `APPLY_SUCCESS` / `IDEMPOTENT_SKIP` |
+| 9d-promo | promotion contract if any | after learning applied |
+<!-- PHASE-9D-TRANSITIONS:verbatim:end -->
+<!-- EXPORT:phase-9-transitions:end -->
+
+
 <!-- EXPORT:phase-table-9d:start -->
 | **9d** | Self-improvement | TOON contract → apply engine; local preflight gate | [`loop-self-improvement`](.cursor/skills/loop-self-improvement/SKILL.md) · `apply-loop-learning.sh` | — | L2/L3 · `PENDING_APPROVAL` STOP |
 <!-- EXPORT:phase-table-9d:end -->
@@ -397,7 +571,17 @@ Each phase is executed by the **`agentic-loop-orchestrator`** agent in **Plan mo
 
 L2/L3 only. TOON contract → `apply-loop-learning.sh --contract`. See `loop-kit/contracts/README.md`.
 
-**Local preflight** (before validate and approve):
+#### 9d-eligible
+
+Check loop level (L2/L3) and profile `self_improvement: true`. L1 or `self_improvement: false` → skip all 9d sub-steps.
+
+#### 9d-extract
+
+Invoke [`loop-self-improvement`](.cursor/skills/loop-self-improvement/SKILL.md). No durable learnings → `NO_LEARNINGS`, end.
+
+#### 9d-preflight
+
+`scripts/loop_9d_preflight.sh` (coverage + conformance `--strict`). Fail closed. Run **before** validate and **again** before apply.
 
 ```bash
 python3 -m venv .venv-loop-9d && .venv-loop-9d/bin/pip install -r scripts/requirements-loop-9d.txt
@@ -405,12 +589,135 @@ export CURSOR_PROJECT_DIR="$(pwd)"
 ./scripts/loop_9d_preflight.sh
 ```
 
+#### 9d-validate
+
+`apply-loop-learning.sh --contract ...` **without** `approve`. Expect `PENDING_APPROVAL` and staging summary at `docs/loop-learnings/staging/<JIRA>-<UTC-ts>-summary.md`.
+
+#### 9d-gate
+
+Present staging summary table. **STOP** — orchestrator must not call `approve` in the same turn.
+
+#### 9d-apply
+
+Re-run **9d-preflight**; only after explicit user approval → `apply-loop-learning.sh ... approve`; branch `loop/skill-update-*`.
+
 **Run-log token:**
 
 ```text
 9d-preflight: ok | 9d: PENDING_APPROVAL → APPLY_SUCCESS | staging=<path> | branch=<name>
 ```
+
+#### 9d-promo
+
+If `-promotion.json` exists, validate/apply only after learning returns `APPLY_SUCCESS` or `IDEMPOTENT_SKIP`.
 <!-- EXPORT:phase-9d:end -->
+
+
+<!-- EXPORT:agents-skills-catalog:start -->
+Kit agents, skills, and commands shipped in this repository. Auto-generated from `export_manifest.yaml` on each export — add a manifest entry and re-run `export_docs --apply` to refresh.
+### Agents and skills catalog
+
+| Type | Name | Phases | Path | Description |
+|------|------|--------|------|-------------|
+| agent | agentic-loop-orchestrator | 0–9 | [`agentic-loop-orchestrator`](.cursor/agents/agentic-loop-orchestrator.md) | See SKILL.md |
+| agent | loop-verifier | 4 | [`loop-verifier`](.cursor/agents/loop-verifier.md) | See SKILL.md |
+| command | agentic-loop | 0–9 | [`agentic-loop`](.cursor/commands/agentic-loop.md) | cdp-agent-loop |
+| skill | agentic-loop | 0–9 | [`agentic-loop`](.cursor/skills/agentic-loop/SKILL.md) | See SKILL.md |
+| skill | agentic-loop | 0–9 | `.cursor/skills/agentic-loop/scripts` | cdp-agent-loop |
+| skill | loop-budget | 6 | [`loop-budget`](.cursor/skills/loop-budget/SKILL.md) | See SKILL.md |
+| skill | loop-triage | 0, 0b | [`loop-triage`](.cursor/skills/loop-triage/SKILL.md) | See SKILL.md |
+| skill | loop-verifier | 4 | [`loop-verifier`](.cursor/skills/loop-verifier/SKILL.md) | See SKILL.md |
+| skill | ops-incident-loop | 0–8 | [`ops-incident-loop`](.cursor/skills/ops-incident-loop/SKILL.md) | See SKILL.md |
+| skill | skills | 9d | `.cursor/skills/loop-self-improvement` | See SKILL.md |
+
+**External (Compound Engineering)**
+
+| Type | Name | Phases | Description |
+|------|------|--------|-------------|
+| external | ce-plan | 1 | Implementation plan + mandatory test matrix (Compound Engineering) |
+| external | ce-testing-reviewer | 2 | Plan review on test matrix before Phase 3 |
+| external | ce-work | 3 | Implementation in target repo |
+| external | ce-code-review | 5 | Code review vs main when no PR path |
+| external | ce-resolve-pr-feedback | 7 | Copilot/CodeQL thread fix → test → reply → resolve |
+| external | ce-compound | 9c | Human-facing wiki compound (distinct from 9d skill mutation) |
+| external | commit-push-pr | 6 | Squash, push feature branch, open PR |
+| external | babysit | 6 | CI babysit (max 3 retries) |
+
+**Not shipped (Cell Platform maintainer only):** `export-orchestrator`, `export-docs`, `export-scan`, `export-transform`, `export-diff`
+<!-- EXPORT:agents-skills-catalog:end -->
+
+
+<!-- EXPORT:skill-sheets:start -->
+### Agent: agentic-loop-orchestrator
+
+**Path:** [`.cursor/agents/agentic-loop-orchestrator.md`](.cursor/agents/agentic-loop-orchestrator.md)
+**Phases:** 0–9
+
+See SKILL.md
+
+### Agent: loop-verifier
+
+**Path:** [`.cursor/agents/loop-verifier.md`](.cursor/agents/loop-verifier.md)
+**Phases:** 4
+
+See SKILL.md
+
+### Command: agentic-loop
+
+**Path:** [`.cursor/commands/agentic-loop.md`](.cursor/commands/agentic-loop.md)
+**Phases:** 0–9
+
+cdp-agent-loop
+
+### Skill: agentic-loop
+
+**Path:** [`.cursor/skills/agentic-loop/SKILL.md`](.cursor/skills/agentic-loop/SKILL.md)
+**Phases:** 0–9
+
+See SKILL.md
+
+### Skill: agentic-loop
+
+**Path:** [`.cursor/skills/agentic-loop/scripts`](.cursor/skills/agentic-loop/scripts)
+**Phases:** 0–9
+
+cdp-agent-loop
+
+### Skill: loop-budget
+
+**Path:** [`.cursor/skills/loop-budget/SKILL.md`](.cursor/skills/loop-budget/SKILL.md)
+**Phases:** 6
+
+See SKILL.md
+
+### Skill: loop-triage
+
+**Path:** [`.cursor/skills/loop-triage/SKILL.md`](.cursor/skills/loop-triage/SKILL.md)
+**Phases:** 0, 0b
+
+See SKILL.md
+
+### Skill: loop-verifier
+
+**Path:** [`.cursor/skills/loop-verifier/SKILL.md`](.cursor/skills/loop-verifier/SKILL.md)
+**Phases:** 4
+
+See SKILL.md
+
+### Skill: ops-incident-loop
+
+**Path:** [`.cursor/skills/ops-incident-loop/SKILL.md`](.cursor/skills/ops-incident-loop/SKILL.md)
+**Phases:** 0–8
+
+See SKILL.md
+
+### Skill: skills
+
+**Path:** [`.cursor/skills/loop-self-improvement`](.cursor/skills/loop-self-improvement)
+**Phases:** 9d
+
+See SKILL.md
+<!-- EXPORT:skill-sheets:end -->
 
 
 <!-- EXPORT:tools-table:start -->
